@@ -1,3 +1,5 @@
+hairObjClumping = $CHR_S_F_Hair_ST03AT_LOD0_Clumping
+hairObj = $CHR_S_F_Hair_ST03AT_LOD0 
 
 
 sampleHeightMax = 185
@@ -67,7 +69,6 @@ struct VertexCluster
 	)
 
 )
-
 
 
 fn getTopFace obj selFaces =
@@ -247,7 +248,11 @@ Fn GetClumpingGuide hairObjClumping vertIndex =
 	else if col.g > 0 then clumpingGuideIndex = col.g / 16
 	else clumpingGuideIndex = col.b / 16
 
-	return AllClumpingGuideline[clumpingGuideIndex]
+
+	if clumpingGuideIndex != 0 then 
+		return AllClumpingGuideline[clumpingGuideIndex]
+	else 
+		return false
 )
 
 try (DestroyDialog hairClumpingTool) catch()
@@ -302,8 +307,6 @@ rollout hairClumpingTool "Hair Clumping Tool" width:400
 
 	on btnSetHairObj pressed do 
 	(
-		hairObjClumping = $CHR_S_F_Hair_ST03AT_LOD0_Clumping
-		hairObj = $CHR_S_F_Hair_ST03AT_LOD0 
 
 		local isClumpingMeshValid = CheckMesh hairObjClumping
 		local isOriginalMeshValid = CheckMesh hairObj
@@ -436,30 +439,39 @@ rollout hairClumpingTool "Hair Clumping Tool" width:400
 		local selFaces = polyop.getFaceSelection hairObjClumping
 		local selVerts = (polyop.getVertsUsingFace hairObjClumping selFaces) as array
 
-		local clumpingGuideline = GetClumpingGuide hairObjClumping selVerts[1]
-
-		local params = #()
-		for v in selVerts do 
+		if selVerts.count > 0 do 
 		(
-			local p = nearestPathParam clumpingGuideline hairObjClumping.verts[v].pos 
-			append params p
-		)
+			local clumpingGuideline = GetClumpingGuide hairObjClumping selVerts[1]
 
-		for i = 1 to selVerts.count do 
-		(
-			v = selVerts[i]
-			local percent = 1.0 - (getValue ccClumpingCurve.curves[1] 0f params[i])
-			local localClumpPos = hairObjClumping.verts[v].pos - hairObjClumping.pos
-			local localOriginalPos = hairObj.verts[v].pos - hairObj.pos
-			local newLocalPos = localOriginalPos * (1 - percent) + localClumpPos * percent
+			if clumpingGuideline != false then 
+			(
+				local params = #()
+				for v in selVerts do 
+				(
+					local localOriginalPos = hairObj.verts[v].pos - hairObj.pos
+					local worldPos = localOriginalPos + hairObjClumping.pos
+					local p = nearestPathParam clumpingGuideline worldPos
+					append params p
+				)
 
-			format "percent --> %\n" 			percent
-			format "localClumpPos --> %\n" 		localClumpPos
-			format "localOriginalPos --> %\n" 	localOriginalPos
-			format "newLocalPos --> %\n" 		newLocalPos
-						
+				for i = 1 to selVerts.count do 
+				(
+					v = selVerts[i]
+					local percent = 1.0 - (getValue ccClumpingCurve.curves[1] 0f params[i])
+					local localClumpPos = hairObjClumping.verts[v].pos - hairObjClumping.pos
+					local localOriginalPos = hairObj.verts[v].pos - hairObj.pos
+					local newLocalPos = localOriginalPos * (1 - percent) + localClumpPos * percent
 
-			hairObjClumping.verts[v].pos =  hairObjClumping.pos + newLocalPos
+-- 					format "percent --> %\n" 			percent
+-- 					format "localClumpPos --> %\n" 		localClumpPos
+-- 					format "localOriginalPos --> %\n" 	localOriginalPos
+-- 					format "newLocalPos --> %\n" 		newLocalPos
+								
+
+					hairObjClumping.verts[v].pos =  hairObjClumping.pos + newLocalPos
+				)
+			)
+			
 		)
 	) 
 	on btnCreateBone pressed do 

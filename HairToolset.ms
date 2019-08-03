@@ -68,6 +68,8 @@ struct VertexCluster
 
 )
 
+
+
 fn getTopFace obj selFaces =
 (
 	local topFacePos = point3 0 0 0
@@ -208,7 +210,45 @@ Fn RefreshClumpingList lbClumpingGroup obj =
 )
 
 
+Fn CheckMesh obj = 
+(
+	local yesNoCancel
+	if (getNumCPVVerts obj.mesh) != obj.mesh.verts.count then 
+	(
 
+		yesNoCancel = yesNoCancelBox (obj.name + " need to clean up, continue?")
+
+		if yesNoCancel == #Yes then 
+		(
+			select obj
+			channelInfo.ClearChannel obj 0
+			macros.run "Modifier Stack" "Convert_to_Poly"
+			polyop.setVertColor obj 0 obj.verts black
+			return true 
+		)
+
+		else 
+		(
+			return false
+		)
+	)
+	else 
+	(
+		return true
+	)
+)
+
+Fn GetClumpingGuide hairObjClumping vertIndex = 
+(
+	local col = getVertColor hairObjClumping.mesh vertIndex
+	local clumpingGuideIndex = 0
+
+	if col.r > 0 then clumpingGuideIndex = col.r / 16
+	else if col.g > 0 then clumpingGuideIndex = col.g / 16
+	else clumpingGuideIndex = col.b / 16
+
+	return AllClumpingGuideline[clumpingGuideIndex]
+)
 
 try (DestroyDialog hairClumpingTool) catch()
 
@@ -216,8 +256,29 @@ AllClumpingGuideline = for s in shapes where (MatchPattern s.name pattern:"Clump
 VertSkinningTable = #()
 
 AllClumpVertGroupArr = #()
+struct CurvePointInfoStruct
+(
+	pos,
+	val,
+	inTangent,
+	outTangent
+)
+struct ClumpingCurveInfoStruct 
+(
+	curvePointArray,
 
-rollout hairClumpingTool "Hair Clumping Tool"
+	Fn NewCurve = 
+	(
+		newPoint = CurvePointInfoStruct()
+-- 		newPoint.pos = 
+	)
+)
+
+
+AllClumpingCurveInfo = #()
+
+
+rollout hairClumpingTool "Hair Clumping Tool" width:400
 (
 	button btnSetHairObj "Pick Hair Mesh" align:#left width:130
 	button btnCreateClumping "Add Clumping" align:#left width:130
@@ -231,13 +292,31 @@ rollout hairClumpingTool "Hair Clumping Tool"
 	button btnRefresh "Refresh" align:#left width:130
 	listbox lbClumpingGroup "Clumping Group" align:#left width:130
 
+	CurveControl ccClumpingCurve "Clumping Curve:"	height:200 width:400 align:#center
+														numCurves:2 visible:true
+														x_range:[0.0,1.0]
+														y_range:[0.0,1.0]
+														scrollValues:[0.0,1.0]
+														commandMode:#move_xy
+														uiFlags:#(#lowerToolbar , #drawgrid, #xvalue)
 
 	on btnSetHairObj pressed do 
 	(
 		hairObjClumping = $CHR_S_F_Hair_ST03AT_LOD0_Clumping
 		hairObj = $CHR_S_F_Hair_ST03AT_LOD0 
-		btnSetHairObj.caption = hairObj.name
 
+		local isClumpingMeshValid = CheckMesh hairObjClumping
+		local isOriginalMeshValid = CheckMesh hairObj
+
+	
+		if isClumpingMeshValid and isOriginalMeshValid then 
+		(
+			btnSetHairObj.caption = hairObj.name
+		)
+		else 
+		(
+			messagebox "Didn't set hair object"
+		)
 	)
 	on btnRefresh pressed do 
 	(
@@ -252,6 +331,7 @@ rollout hairClumpingTool "Hair Clumping Tool"
 	)
 	on btnCreateClumping pressed do 
 	(
+		clearListener()
 		selFaces = polyop.getFaceSelection hairObjClumping
 		selVerts = polyop.getVertsUsingFace hairObjClumping selFaces
 		hairObjClumping.showVertexColors = on
@@ -262,7 +342,6 @@ rollout hairClumpingTool "Hair Clumping Tool"
 
 		AllVertexCluster = #()
 
-		
 		initVertCluster = VertexCluster()
 		initVertCluster.obj = hairObjClumping
 
@@ -272,7 +351,6 @@ rollout hairClumpingTool "Hair Clumping Tool"
 
 		append AllVertexCluster initVertCluster
 
-		clearListener()
 
 		gradDir = computeInitialSampleGradDirection initVertCluster initialSamplePos selVerts
 		gradDir = normalize gradDir
@@ -353,6 +431,37 @@ rollout hairClumpingTool "Hair Clumping Tool"
 		
 	)
 
+	on ccClumpingCurve ptChanged ci val do
+	(
+		local selFaces = polyop.getFaceSelection hairObjClumping
+		local selVerts = (polyop.getVertsUsingFace hairObjClumping selFaces) as array
+
+		local clumpingGuideline = GetClumpingGuide hairObjClumping selVerts[1]
+
+		local params = #()
+		for v in selVerts do 
+		(
+			local p = nearestPathParam clumpingGuideline hairObjClumping.verts[v].pos 
+			append params p
+		)
+
+		for i = 1 to selVerts.count do 
+		(
+			v = selVerts[i]
+			local percent = 1.0 - (getValue ccClumpingCurve.curves[1] 0f params[i])
+			local localClumpPos = hairObjClumping.verts[v].pos - hairObjClumping.pos
+			local localOriginalPos = hairObj.verts[v].pos - hairObj.pos
+			local newLocalPos = localOriginalPos * (1 - percent) + localClumpPos * percent
+
+			format "percent --> %\n" 			percent
+			format "localClumpPos --> %\n" 		localClumpPos
+			format "localOriginalPos --> %\n" 	localOriginalPos
+			format "newLocalPos --> %\n" 		newLocalPos
+						
+
+			hairObjClumping.verts[v].pos =  hairObjClumping.pos + newLocalPos
+		)
+	) 
 	on btnCreateBone pressed do 
 	(
 		for s = 1 to AllClumpingGuideline.count do 

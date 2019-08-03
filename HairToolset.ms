@@ -11,6 +11,10 @@ hairObjClumping
 hairObj 
 headBone = $BnHead
 
+-- for v = 1 to hairObjClumping.verts.count do 
+-- (
+-- 	polyop.setMapVert hairObjClumping 1 v (point3 v 0 0) 
+-- )
 
 struct VertexCluster
 (
@@ -228,6 +232,8 @@ Fn CheckMesh obj =
 			return true 
 		)
 
+
+
 		else 
 		(
 			return false
@@ -252,7 +258,7 @@ Fn GetClumpingGuide hairObjClumping vertIndex =
 	if clumpingGuideIndex != 0 then 
 		return AllClumpingGuideline[clumpingGuideIndex]
 	else 
-		return false
+		return undefined
 )
 
 try (DestroyDialog hairClumpingTool) catch()
@@ -400,6 +406,10 @@ rollout hairClumpingTool "Hair Clumping Tool" width:400
 			local clumpingPos = hairObjClumping.verts[v].pos + (posOnCurve - hairObjClumping.verts[v].pos) * paramOnCurve
 
 			hairObjClumping.verts[v].pos = clumpingPos
+
+			local localPos = clumpingPos - hairObjClumping.pos
+
+			polyop.setMapVert hairObjClumping 1 v localPos 
 		)
 				
 		local col = black
@@ -431,7 +441,6 @@ rollout hairClumpingTool "Hair Clumping Tool" width:400
 			local newWorldPos = hairObjClumping.pos + localPos
 			hairObjClumping.verts[v].pos = newWorldPos
 		)
-		
 	)
 
 	on ccClumpingCurve ptChanged ci val do
@@ -443,7 +452,7 @@ rollout hairClumpingTool "Hair Clumping Tool" width:400
 		(
 			local clumpingGuideline = GetClumpingGuide hairObjClumping selVerts[1]
 
-			if clumpingGuideline != false then 
+			if clumpingGuideline != undefined then 
 			(
 				local params = #()
 				for v in selVerts do 
@@ -458,7 +467,7 @@ rollout hairClumpingTool "Hair Clumping Tool" width:400
 				(
 					v = selVerts[i]
 					local percent = 1.0 - (getValue ccClumpingCurve.curves[1] 0f params[i])
-					local localClumpPos = hairObjClumping.verts[v].pos - hairObjClumping.pos
+					local localClumpPos = meshop.getMapVert hairObjClumping.mesh 1 v
 					local localOriginalPos = hairObj.verts[v].pos - hairObj.pos
 					local newLocalPos = localOriginalPos * (1 - percent) + localClumpPos * percent
 
@@ -466,6 +475,8 @@ rollout hairClumpingTool "Hair Clumping Tool" width:400
 -- 					format "localClumpPos --> %\n" 		localClumpPos
 -- 					format "localOriginalPos --> %\n" 	localOriginalPos
 -- 					format "newLocalPos --> %\n" 		newLocalPos
+
+
 								
 
 					hairObjClumping.verts[v].pos =  hairObjClumping.pos + newLocalPos

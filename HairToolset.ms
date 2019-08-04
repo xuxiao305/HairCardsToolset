@@ -46,9 +46,103 @@ struct ChannelUtility
 
 chanUtil = ChannelUtility()
 
+hairClumpingTool.ccClumpingCurve.curves[1].points[1].value
+
+fn DeleteUserProp node prop = 
+(
+	if getUserProp node prop == undefined do return()
+
+ 	buff = (getUserPropBuffer node) as stringStream 
+ 	newb = stringStream ""
+ 	while not eof buff do
+ 	(
+  		str = readLine buff
+  		if str != "" and not matchpattern str pattern:("*" + prop + "*=*") do 
+  		(
+  			format "%\n" str to:newb
+ 		)
+ 	)
+ 	setUserPropBuffer node (replace_LF_with_CRLF (newb as string))
+)
 
 
+struct CurveUtility 
+(
+	Fn GetCurveInfo allCurvesControl = 
+	(
+		local allCurveInfo = #()
+		for c = 1 to allCurvesControl.count do 
+		(
+			local curCurveInfo = #()
+			local nameStr = allCurvesControl[c].name
+			local curve = allCurvesControl[c].curves[1]
+			local valueArr = #()
+			local inTangentArr = #()
+			local outTangentArr = #()
+			local bezierArr = #()
+			local cornerArr = #()
 
+			for i = 1 to curve.points.count do 
+			(
+				append valueArr curve.points[i].value
+				append inTangentArr curve.points[i].inTangent
+				append outTangentArr curve.points[i].outTangent
+				append bezierArr curve.points[i].bezier
+				append cornerArr curve.points[i].corner
+
+			)
+			curCurveInfo = #(nameStr, valueArr, inTangentArr, outTangentArr, bezierArr, cornerArr)
+
+			append allCurveInfo curCurveInfo
+		)
+		
+		return allCurveInfo
+	),
+
+
+	Fn SaveCurveInfo obj curveInfoArr guideline = 
+	(
+		setUserProp obj ("CurveInfo_" + guideline.name) curveInfoArr
+	),
+
+
+	Fn LoadCurveInfo obj guideline = 
+	(
+		local curveInfo = getUserProp obj ("CurveInfo_" + guideline.name)
+		
+		return curveInfo
+	),
+
+	Fn SetCurveinfo curveInfo curve = 
+	(
+		local nameStr = curveInfo[1]
+		local valArr = curveInfo[2]
+		local inTangentArr = curveInfo[3]
+		local outTangentArr = curveInfo[4]
+		local bezierArr = curveInfo[5]
+		local cornerArr = curveInfo[6]
+
+		for p = 1 to curve.points.count do 
+		(
+			curve.points[p].value = valArr[p]
+			curve.points[p].inTangent = inTangentArr[p]
+			curve.points[p].outTangent = outTangentArr[p]
+			curve.points[p].bezier = bezierArr[p]
+			curve.points[p].corner = cornerArr[p]
+		)
+	),
+	Fn RemoveCurveInfo obj guideline = 
+	(
+		DeleteUserProp obj ("CurveInfo_" + guideline.name)
+	)
+)
+
+crvUtil = CurveUtility()
+
+-- x = crvUtil.GetCurveInfo #(hairClumpingTool.ccClumpingCurve, hairClumpingTool.ccTwistCurve)
+-- crvUtil.SaveCurveInfo $ #(x)
+
+-- crvUtil.LoadCurveInfo $ 1
 -- for v = 1 to hairObjClumping.verts.count do 
 -- (
 -- 	polyop.setMapVert hairObjClumping 1 v (point3 v 0 0) 
@@ -280,8 +374,9 @@ Fn CheckMesh obj =
 )
 
 
-Fn GetGuideline hairObjClumping vertIndex = 
+Fn GetGuideline hairObjClumping vertIndexArr = 
 (
+	local vertIndex = vertIndexArr[1]
 	local col = getVertColor hairObjClumping.mesh vertIndex
 	local clumpingGuideIndex = 0
 
@@ -294,6 +389,26 @@ Fn GetGuideline hairObjClumping vertIndex =
 		return AllClumpingGuideline[clumpingGuideIndex]
 	else 
 		return undefined
+)
+
+Fn SampleGuildeLine guideline obj selVerts = 
+(
+	for v in selVerts do 
+	(
+		local paramOnCurve = nearestPathParam guideline obj.verts[v].pos
+		local posOnCurve = interpCurve3D guideline 1 paramOnCurve
+
+		local clumpingPos = obj.verts[v].pos + (posOnCurve - obj.verts[v].pos) * paramOnCurve
+
+		obj.verts[v].pos = clumpingPos
+
+		local localPos = clumpingPos - obj.pos
+
+		polyop.setMapVert obj 1 v localPos 
+
+		local paramChannelIndex = chanUtil.GetChannelIndex obj ChannelName_CurveParams
+		polyop.setMapVert obj paramChannelIndex v (point3 paramOnCurve 0 0)
+	)
 )
 
 
@@ -319,7 +434,7 @@ Fn ResolveFinalPosition hairObjClumping ccClumpingCurve ccTwistCurve =
 	local selVerts = (polyop.getVertsUsingFace hairObjClumping selFaces) as array
 	if selVerts.count == 0 do return false
 
-	local guideline = GetGuideline hairObjClumping selVerts[1]
+	local guideline = GetGuideline hairObjClumping selVerts
 	if guideline == undefined do return false 
 	
 	local chanCurveParamIndex = chanUtil.GetChannelIndex hairObjClumping ChannelName_CurveParams
@@ -358,6 +473,10 @@ Fn ResolveFinalPosition hairObjClumping ccClumpingCurve ccTwistCurve =
 
 -- 		polyOp.setMapVert hairObjClumping chanIndex v newLocalPos
 	)
+
+
+	local allCurveInfo = crvUtil.GetCurveInfo AllClumpingCurveControl
+	crvUtil.SaveCurveInfo hairObjClumping allCurveInfo guideline
 )
 
 try (DestroyDialog hairClumpingTool) catch()
@@ -385,7 +504,7 @@ struct ClumpingCurveInfoStruct
 )
 
 
-AllClumpingCurveInfo = #()
+AllClumpingCurveControl = #()
 
 rollout hairClumpingTool "Hair Clumping Tool" width:400
 (
@@ -397,8 +516,9 @@ rollout hairClumpingTool "Hair Clumping Tool" width:400
 -- 	button btnPreSkinning "Pre-Skinning" align:#left width:130
 -- 	button btnSkinning "Start Skinning"	align:#left width:130
 
-	button btnRefresh "Refresh" align:#left width:120 across:2
-	button btnUpdateInitialPos "Update Initial Pos" align:#right width:120 across:2 
+	button btnRefresh "Refresh" align:#left width:120 across:3
+	button btnResampleGuilde "Resample Guideline" align:#middle width:120 across:3
+	button btnUpdateInitialPos "Update Initial Pos" align:#right width:120 across:3 
 
 
 	listbox lbClumpingGroup "Clumping Group" align:#left width:130
@@ -419,6 +539,8 @@ rollout hairClumpingTool "Hair Clumping Tool" width:400
 	(
 		zoom ccClumpingCurve #all
 		zoom ccTwistCurve #all
+
+		AllClumpingCurveControl = #(ccClumpingCurve, ccTwistCurve)
 	)
 	on btnSetHairObj pressed do 
 	(
@@ -428,7 +550,6 @@ rollout hairClumpingTool "Hair Clumping Tool" width:400
 		local isClumpingMeshValid = CheckMesh hairObjClumping
 		local isInitialMeshValid = CheckMesh hairObj
 		
-
 		chanUtil.CreateChannel hairObjClumping ChannelName_CurveParams
 		
 		if chanUtil.GetChannelIndex hairObjClumping ChannelName_InitialPosition == false do 
@@ -436,7 +557,6 @@ rollout hairClumpingTool "Hair Clumping Tool" width:400
 			local chanInitPosIndex = chanUtil.CreateChannel hairObjClumping ChannelName_InitialPosition
 			channelInfo.CopyChannel hairObjClumping 1 0
 			channelInfo.PasteChannel hairObjClumping 3 chanInitPosIndex
-
 		)
 		
 		
@@ -460,6 +580,20 @@ rollout hairClumpingTool "Hair Clumping Tool" width:400
 	(
 		local verts = AllClumpVertGroupArr[(lbClumpingGroup.selection as integer)]
 		polyop.setFaceSelection hairObjClumping (polyop.getFacesUsingVert hairObjClumping verts)
+		
+		selFaces = polyop.getFaceSelection hairObjClumping
+		selVerts = (polyop.getVertsUsingFace hairObjClumping selFaces as array)
+
+		local guideline = GetGuideline hairObjClumping selVerts
+		local curveInfo = execute (crvUtil.LoadCurveInfo hairObjClumping guideline)
+
+
+		for i = 1 to AllClumpingCurveControl.count do
+		(
+			crvUtil.SetCurveinfo curveInfo[i] AllClumpingCurveControl[i].curves[1] 
+		)
+		
+		print curveInfo
 		ForceCompleteRedraw()
 	)
 	on btnCreateClumping pressed do 
@@ -518,26 +652,11 @@ rollout hairClumpingTool "Hair Clumping Tool" width:400
 		for c in AllVertexCluster do 
 		(
 			local pos = c.clusterPos
-			addKnot clumpingGuideline 1 #smooth #line pos
+			addKnot clumpingGuideline 1 #smooth #curve pos
 		)
+		updateShape clumpingGuideline
 
-		local paramChannelIndex = chanUtil.GetChannelIndex hairObjClumping ChannelName_CurveParams
-
-		for v in selVerts do 
-		(
-			local paramOnCurve = nearestPathParam clumpingGuideline hairObjClumping.verts[v].pos
-			local posOnCurve = interpCurve3D clumpingGuideline 1 paramOnCurve
-
-			local clumpingPos = hairObjClumping.verts[v].pos + (posOnCurve - hairObjClumping.verts[v].pos) * paramOnCurve
-
-			hairObjClumping.verts[v].pos = clumpingPos
-
-			local localPos = clumpingPos - hairObjClumping.pos
-
-			polyop.setMapVert hairObjClumping 1 v localPos 
-
-			polyop.setMapVert hairObjClumping paramChannelIndex v (point3 paramOnCurve 0 0)
-		)
+		SampleGuildeLine clumpingGuideline hairObjClumping selVerts
 				
 		local col = black
 		if AllClumpingGuideline.count < 16 then 
@@ -551,6 +670,7 @@ rollout hairClumpingTool "Hair Clumping Tool" width:400
 		append AllClumpingGuideline clumpingGuideline
 
 		RefreshClumpingList lbClumpingGroup hairObjClumping
+		lbClumpingGroup.selection = lbClumpingGroup.items.count
 
 		ccClumpingCurve.curves[ccClumpingCurve.curves.count].points[1].value = point2 0 1
 		ccClumpingCurve.curves[ccClumpingCurve.curves.count].points[2].value = point2 1 0
@@ -560,6 +680,24 @@ rollout hairClumpingTool "Hair Clumping Tool" width:400
 
 		zoom ccClumpingCurve #all 
 		zoom ccTwistCurve #all 
+
+
+		-- Save the curve infomation 
+		local allCurveInfo = crvUtil.GetCurveInfo AllClumpingCurveControl
+		crvUtil.SaveCurveInfo hairObjClumping allCurveInfo clumpingGuideline
+
+
+
+	)
+
+	on btnResampleGuilde pressed do 
+	(
+		clearListener()
+		selFaces = polyop.getFaceSelection hairObjClumping
+		selVerts = (polyop.getVertsUsingFace hairObjClumping selFaces) as array
+		local guideline = GetGuideline hairObjClumping selVerts
+
+		SampleGuildeLine guideline hairObjClumping selVerts
 	)
 
 	on btnRemoveClumping pressed do 
@@ -603,11 +741,14 @@ rollout hairClumpingTool "Hair Clumping Tool" width:400
 
 	on ccClumpingCurve ptChanged ci val do
 	(
+		clearListener()
 		ResolveFinalPosition hairObjClumping ccClumpingCurve ccTwistCurve
+
 	) 
 
 	on ccClumpingCurve tangentChanged ci val type do 
 	(
+		clearListener()
 		ResolveFinalPosition hairObjClumping ccClumpingCurve ccTwistCurve
 	)
 

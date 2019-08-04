@@ -13,6 +13,12 @@ headBone = $BnHead
 ChannelName_CurveParams = "CurveParams"
 ChannelName_InitialPosition = "InitialPos"
 
+AllClumpingGuideline = for s in shapes where (MatchPattern s.name pattern:"ClumpingGuide_*") collect s
+VertSkinningTable = #()
+
+AllClumpVertGroupArr = #()
+
+AllClumpingCurveControl = #()
 
 struct ChannelUtility
 (
@@ -46,7 +52,7 @@ struct ChannelUtility
 
 chanUtil = ChannelUtility()
 
-hairClumpingTool.ccClumpingCurve.curves[1].points[1].value
+
 
 fn DeleteUserProp node prop = 
 (
@@ -81,6 +87,7 @@ struct CurveUtility
 			local outTangentArr = #()
 			local bezierArr = #()
 			local cornerArr = #()
+
 
 			for i = 1 to curve.points.count do 
 			(
@@ -298,24 +305,6 @@ Fn SkinWeight meshToSkin bonesAndWeights boneNamesByID =
 	)
 )
 
-Fn GetFaceColor obj = 
-(
-	local arr = #()
-	for v in obj.mesh.verts do 
-	(
-		local col = getVertColor obj.mesh v.index
-		local clumpingGuideIndex = 0
-
-		if col.r > 0 then clumpingGuideIndex = col.r / 16
-		else if col.g > 0 then clumpingGuideIndex = col.g / 16
-		else clumpingGuideIndex = col.b / 16
-
-		append arr v
-
-		meshop.getVertsByColor $.mesh red 0 0 0
-
-	)
-)
 
 Fn GetAllClumpingGroup obj = 
 (
@@ -380,9 +369,9 @@ Fn GetGuideline hairObjClumping vertIndexArr =
 	local col = getVertColor hairObjClumping.mesh vertIndex
 	local clumpingGuideIndex = 0
 
-	if col.r > 0 then clumpingGuideIndex = col.r / 16
-	else if col.g > 0 then clumpingGuideIndex = col.g / 16
-	else clumpingGuideIndex = col.b / 16
+	if col.r > 0 then clumpingGuideIndex = (col.r - 16) / 16
+	else if col.g > 0 then clumpingGuideIndex = ((col.g - 16) / 16) + 15
+	else clumpingGuideIndex = ((col.b - 16) / 16) + 31
 
 
 	if clumpingGuideIndex != 0 then 
@@ -481,10 +470,7 @@ Fn ResolveFinalPosition hairObjClumping ccClumpingCurve ccTwistCurve =
 
 try (DestroyDialog hairClumpingTool) catch()
 
-AllClumpingGuideline = for s in shapes where (MatchPattern s.name pattern:"ClumpingGuide_*") collect s
-VertSkinningTable = #()
 
-AllClumpVertGroupArr = #()
 struct CurvePointInfoStruct
 (
 	pos,
@@ -504,7 +490,7 @@ struct ClumpingCurveInfoStruct
 )
 
 
-AllClumpingCurveControl = #()
+
 
 rollout hairClumpingTool "Hair Clumping Tool" width:400
 (
@@ -587,7 +573,6 @@ rollout hairClumpingTool "Hair Clumping Tool" width:400
 		local guideline = GetGuideline hairObjClumping selVerts
 		local curveInfo = execute (crvUtil.LoadCurveInfo hairObjClumping guideline)
 
-
 		for i = 1 to AllClumpingCurveControl.count do
 		(
 			crvUtil.SetCurveinfo curveInfo[i] AllClumpingCurveControl[i].curves[1] 
@@ -655,6 +640,7 @@ rollout hairClumpingTool "Hair Clumping Tool" width:400
 			addKnot clumpingGuideline 1 #smooth #curve pos
 		)
 		updateShape clumpingGuideline
+		append AllClumpingGuideline clumpingGuideline
 
 		SampleGuildeLine clumpingGuideline hairObjClumping selVerts
 				
@@ -667,16 +653,32 @@ rollout hairClumpingTool "Hair Clumping Tool" width:400
 			col = color 0 0 ((AllClumpingGuideline.count - 31) * 16)
 
 		polyop.setVertColor hairObjClumping 0 selVerts col
-		append AllClumpingGuideline clumpingGuideline
 
 		RefreshClumpingList lbClumpingGroup hairObjClumping
 		lbClumpingGroup.selection = lbClumpingGroup.items.count
 
-		ccClumpingCurve.curves[ccClumpingCurve.curves.count].points[1].value = point2 0 1
-		ccClumpingCurve.curves[ccClumpingCurve.curves.count].points[2].value = point2 1 0
+		hairClumpingTool.ccClumpingCurve.curves[1].points[1].value = point2 0 1
+		ccClumpingCurve.curves[1].points[2].value = point2 1 0
 
-		ccTwistCurve.curves[ccTwistCurve.curves.count].points[1].value = point2 0 0
-		ccTwistCurve.curves[ccTwistCurve.curves.count].points[2].value = point2 1 0
+		ccTwistCurve.curves[1].points[1].value = point2 0 0
+		ccTwistCurve.curves[1].points[2].value = point2 1 0
+
+		ccClumpingCurve.curves[1].points[1].inTangent = point2 0 0
+		ccClumpingCurve.curves[1].points[1].outTangent = point2 0 0
+		ccClumpingCurve.curves[1].points[2].inTangent = point2 0 0
+		ccClumpingCurve.curves[1].points[2].outTangent = point2 0 0
+
+		ccTwistCurve.curves[1].points[1].inTangent = point2 0 0
+		ccTwistCurve.curves[1].points[1].outTangent = point2 0 0
+		ccTwistCurve.curves[1].points[2].inTangent = point2 0 0
+		ccTwistCurve.curves[1].points[2].outTangent = point2 0 0
+
+
+		hairClumpingTool.ccClumpingCurve.curves[1].points[1].bezier = true
+		hairClumpingTool.ccClumpingCurve.curves[1].points[2].corner = false
+
+		ccTwistCurve.curves[1].points[1].bezier = true
+		ccTwistCurve.curves[1].points[2].corner = false
 
 		zoom ccClumpingCurve #all 
 		zoom ccTwistCurve #all 

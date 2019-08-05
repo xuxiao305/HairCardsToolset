@@ -899,33 +899,6 @@ rollout hairClumpingTool "Hair Clumping Tool" width:400
 
 
 
-
--- radius1 = 100
--- radius2 = 10
--- width = 10
- 
--- vert_array = #()
--- face_array = #()
- 
--- vert_count = 0
--- num_faces = 10
- 
--- for a = 0 to (360-(360/num_faces)) by 360/num_faces do
--- (
--- 	v1 = [radius1*cos(a+width),radius1*sin(a+width),0]
--- 	v2 = [radius1*cos(a-width),radius1*sin(a-width),0]
--- 	v3 = [radius2*cos(a),radius2*sin(a),0]
--- 	append vert_array v1
--- 	append vert_array v2
--- 	append vert_array v3
-	 
--- 	append face_array [vert_count+1,vert_count+3,vert_count+2]
--- 	vert_count += 3
--- )
- 
--- m = mesh vertices:vert_array faces:face_array
-
-
 vertArr = #()
 faceArr = #()
 
@@ -936,9 +909,9 @@ Fn BuildHairCardMesh guideline =
 	local sampleNum = 10
 	local width = 10.0
 
-	for i = 1 to sampleNum do 
+	for i = 0 to sampleNum do 
 	(
-		local param = (i as float) / ((sampleNum + 1.0) as float)
+		local param = (i as float) / ((sampleNum + 0.1) as float)
 		local guidelineMat = GuideWorldMatrix guideline param
 		local invGuideWorldMat = inverse guidelineMat
 
@@ -950,9 +923,6 @@ Fn BuildHairCardMesh guideline =
 
 			local vertMat = TransMatrix localPos
 			local worldPos = vertMat * guidelineMat
-
-			if p == 1 then (point pos:worldPos.translation)
-
 			append vertArr worldPos.translation
 		)
 	)
@@ -970,3 +940,10 @@ for v = 1 to (vertArr.count - 2) do
 
 m = mesh vertices:vertArr faces:faceArr
 m.backfacecull = on
+select m 
+macros.run "Modifier Stack" "Convert_to_Poly"
+
+
+-- chanIndex = chanUtil.CreateChannel m ChannelName_InitialPosition
+-- channelInfo.CopyChannel hairObjClumping 1 0
+-- channelInfo.PasteChannel hairObjClumping 3 chanIndex

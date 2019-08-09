@@ -25,6 +25,107 @@ Fn CheckMesh obj =
 	)
 )
 
+struct VertexCluster
+(
+	obj,
+	vertexArr,
+	vertexArrDist,
+	clusterPos,
+
+	fn getPointsInRadius samplePos r _gradDir _selVerts = 
+	(
+		local _vertexArr = #()
+		local _vertDistance = #()
+
+		for v in _selVerts do 
+		(
+			local _dist = distance samplePos obj.verts[v].pos
+
+			if _dist > r then 
+			(
+				continue
+			)
+
+			if _gradDir != 0 then 
+			(
+				local v1 = normalize (obj.verts[v].pos - samplePos)
+				local v2 = normalize _gradDir
+				if (dot v1 v2 ) < 0 then
+				(
+					continue
+				)
+			)
+
+			append _vertexArr v
+			append _vertDistance _dist
+		)
+		return #(_vertexArr, _vertDistance)
+	),
+
+	fn getVertexArr _samplePos _r _gradDir _selVerts =
+	(
+		local closestPointsInfo = getPointsInRadius _samplePos _r _gradDir _selVerts
+		
+		return closestPointsInfo	
+	),
+
+	fn computeClusterPos _vertexArr = 
+	(
+		local _clusterPos = point3 0 0 0
+		for v in _vertexArr do 
+		(
+			local newPos = obj.verts[v].pos / (_vertexArr.count as float)
+			_clusterPos = _clusterPos + newPos
+		)
+
+		return _clusterPos
+	)
+
+)
+
+
+Fn getTopFace obj selFaces =
+(
+	local topFacePos = point3 0 0 0
+	local topFaceIndex = 0
+
+	for f in selFaces do 
+	(
+		local facePos = polyop.getFaceCenter obj f 
+		if facePos[3] > topFacePos[3] then 
+		(
+			topFacePos = facePos
+			topFaceIndex = f
+		)
+	)
+
+	return #(topFacePos, topFaceIndex)
+)
+	
+Fn computeInitialSampleGradDirection _vertCluster _startSamplePos _selVerts = 
+(
+	local _closestPointsInfo0 = (_vertCluster.getVertexArr _startSamplePos sampleRadius 0 _selVerts)
+	local _closestPointsInfo1 = (_vertCluster.getVertexArr _startSamplePos (sampleRadius * 2.0) 0 _selVerts)
+
+	local _clusterPos0 = _vertCluster.computeClusterPos _closestPointsInfo0[1]
+	local _clusterPos1 = _vertCluster.computeClusterPos _closestPointsInfo1[1]
+
+	local _initGradDir = _clusterPos1 - _clusterPos0
+
+	return _initGradDir
+)	
+
+
+
+Fn RefreshGuidelineList lbClumpingGroup obj = 
+(
+	AllClumpVertGroupArr = GetAllBindingGroup obj
+	lbClumpingGroup.items = for i = 1 to AllClumpVertGroupArr.count collect (i as string) 
+)
+
+
+
+
 
 Fn ResolveFinalPosition hairGeo ccClumpingCurve ccTwistCurve = 
 (
@@ -83,7 +184,7 @@ rollout HairEditor "Hair Editor"
 (
 	button btnSetHairObj "Pick Hair Mesh" align:#left width:120 across:3
 	button btnCreateClumping "Add Clumping" align:#middle width:120 across:3
-	button btnRemoveClumping "Remove Clumping"  align:#right width:120 across:3
+	button btnRemoveBinding "Remove Clumping"  align:#right width:120 across:3
 
 
 	button btnRefresh "Refresh" align:#left width:120 across:3
@@ -123,7 +224,7 @@ rollout HairEditor "Hair Editor"
 	)
 	on btnRefresh pressed do 
 	(
-		RefreshClumpingList lbHairGroup hairGeo
+		RefreshGuidelineList lbHairGroup hairGeo
 		zoom GraphEditor.ccClumpingCurve #all 
 		zoom GraphEditor.ccTwistCurve #all 
 	)
@@ -212,7 +313,7 @@ rollout HairEditor "Hair Editor"
 				
 		BindGuideline hairGeo selVerts
 
-		RefreshClumpingList lbHairGroup hairGeo
+		RefreshGuidelineList lbHairGroup hairGeo
 		lbHairGroup.selection = lbHairGroup.items.count
 
 
@@ -235,14 +336,14 @@ rollout HairEditor "Hair Editor"
 		SampleGuildeLine guideline hairGeo selVerts
 	)
 
-	on btnRemoveClumping pressed do 
+	on btnRemoveBinding pressed do 
 	(
 		local selFaces = polyop.getFaceSelection hairGeo
 		local selVerts = polyop.getVertsUsingFace hairGeo selFaces 
 		
 		polyop.setVertColor hairGeo 0 selVerts black
 
-		RefreshClumpingList lbHairGroup hairGeo 
+		RefreshGuidelineList lbHairGroup hairGeo 
 
 		local chanInitPosIndex = chanUtil.GetChannelIndex hairGeo ChannelName_InitialPosition
 
@@ -261,7 +362,7 @@ rollout HairEditor "Hair Editor"
 		
 		polyop.setVertColor hairGeo 0 selVerts black
 
-		RefreshClumpingList lbHairGroup hairGeo 
+		RefreshGuidelineList lbHairGroup hairGeo 
 
 		local chanInitPosIndex = chanUtil.GetChannelIndex hairGeo ChannelName_InitialPosition
 

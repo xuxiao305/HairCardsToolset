@@ -2,9 +2,8 @@
 
 guideColStep = 4
 
-
-
-
+---------------------------------------------------------------
+-------------- Guildeline Managing Functions  -----------------
 Fn SampleGuildeLine guideline obj selVerts = 
 (
 	for v in selVerts do 
@@ -62,6 +61,63 @@ Fn GuideWorldMatrixFromSparsingData dataArray index =
 
 	return mat
 )
+
+
+Fn GetGuideline hairGeo vertIndexArr = 
+(
+	local vertIndex = vertIndexArr[1]
+	local col = getVertColor hairGeo.mesh vertIndex
+	local clumpingGuideIndex = 0
+
+	if col.r > 0 then clumpingGuideIndex = (col.r - guideColStep) / guideColStep
+	else if col.g > 0 then clumpingGuideIndex = ((col.g - guideColStep) / guideColStep) + (guideColStep - 1)
+	else clumpingGuideIndex = ((col.b - guideColStep) / guideColStep) + (guideColStep * 2 - 1)
+
+
+	if clumpingGuideIndex != 0 then 
+		return AllGuideline[clumpingGuideIndex]
+	else 
+		return undefined
+)
+
+Fn BindGuideline hairGeo verts =
+(
+	local col = black
+	if AllGuideline.count < guideColStep then 
+		col = color ((AllGuideline.count + 1) * guideColStep) 0 0
+	else if AllGuideline.count < guideColStep * 2 then 
+		col = color 0 ((AllGuideline.count - (guideColStep - 1)) * guideColStep) 0
+	else if AllGuideline.count < guideColStep * 3 then 
+		col = color 0 0 ((AllGuideline.count - (guideColStep * 2 - 1)) * guideColStep)
+
+	polyop.setVertColor hairGeo 0 verts col
+
+)
+
+
+Fn GetAllBindingGroup obj = 
+(
+	allColor = #()
+	allClumpingVertArr = #()
+
+	for i = 1 to 3 do 
+	(
+		for c = guideColStep to 256 by guideColStep do 
+		(
+			local newCol = black
+			if i == 1 do newCol = color c 0 0
+			if i == 2 do newCol = color 0 c 0
+			if i == 3 do newCol = color 0 0 c
+
+			vertArr = (meshop.getVertsByColor obj.mesh newCol 0 0 0) as array 
+			if vertArr.count > 0 do append allClumpingVertArr vertArr 
+		)
+	)
+	return allClumpingVertArr
+)
+-------------- Guildeline Managing Functions End --------------
+---------------------------------------------------------------
+
 
 Fn BuildHairCardMesh guideline = 
 (
@@ -122,7 +178,7 @@ Fn BuildHairCardMesh guideline =
 )
 
 
-Fn SaveCurveSample guideline sampleNum = 
+Fn SaveGuidelineData guideline sampleNum = 
 (
 	local allPos = stringstream ""
 
@@ -138,7 +194,7 @@ Fn SaveCurveSample guideline sampleNum =
 
 	setUserPropBuffer guideline  (allPos as string)
 )
-SaveCurveSample $Line001 1000
+
 
 Fn DeformHairCards hairGeo vertArr = 
 (
@@ -162,37 +218,6 @@ Fn DeformHairCards hairGeo vertArr =
 )
 
 
-Fn GetGuideline hairGeo vertIndexArr = 
-(
-	local vertIndex = vertIndexArr[1]
-	local col = getVertColor hairGeo.mesh vertIndex
-	local clumpingGuideIndex = 0
-
-	if col.r > 0 then clumpingGuideIndex = (col.r - guideColStep) / guideColStep
-	else if col.g > 0 then clumpingGuideIndex = ((col.g - guideColStep) / guideColStep) + (guideColStep - 1)
-	else clumpingGuideIndex = ((col.b - guideColStep) / guideColStep) + (guideColStep * 2 - 1)
-
-
-	if clumpingGuideIndex != 0 then 
-		return AllGuideline[clumpingGuideIndex]
-	else 
-		return undefined
-)
-
-Fn BindGuideline hairGeo verts =
-(
-	local col = black
-	if AllGuideline.count < guideColStep then 
-		col = color ((AllGuideline.count + 1) * guideColStep) 0 0
-	else if AllGuideline.count < guideColStep * 2 then 
-		col = color 0 ((AllGuideline.count - (guideColStep - 1)) * guideColStep) 0
-	else if AllGuideline.count < guideColStep * 3 then 
-		col = color 0 0 ((AllGuideline.count - (guideColStep * 2 - 1)) * guideColStep)
-
-	polyop.setVertColor hairGeo 0 verts col
-
-)
-
 
 
 
@@ -202,7 +227,12 @@ rollout HairBuilder "Hair Builder"
 
 	on btnNewHairCards pressed do
 	(
-		BuildHairCardMesh $
+		if selection.count == 1 and (classof selection[1] == line) then 
+		(
+			local sp = selection[1]
+			BuildHairCardMesh sp
+			SaveGuidelineData sp 1000
+		)
 	)
 )
 

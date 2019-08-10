@@ -37,6 +37,21 @@ Fn DeleteUserProp node prop =
  	setUserPropBuffer node (replace_LF_with_CRLF (newb as string))
 )
 
+Fn SetArrayProperty nd propName arrValue = 
+(
+	local s = StringStream ""
+
+	format "#("  to:s
+
+	for i = 1 to arrValue.count do 
+	(
+		if i == arrValue.count then format "%)" (arrValue[i] as string) to:s
+		else format "%," arrValue[i] to:s
+	)
+	setUserProp nd propName (s as string)
+)
+
+
 
 struct ChannelUtility
 (
@@ -144,132 +159,10 @@ struct CurveUtility
 
 crvUtil = CurveUtility()
 
+-- filein "HairToolset_GuidelineAttribute.ms"
 filein "HairToolset_Builder.ms"
 filein "HairToolset_Editor.ms"
 filein "HairToolset_Rigger.ms"
-
-struct VertexCluster
-(
-	obj,
-	vertexArr,
-	vertexArrDist,
-	clusterPos,
-
-	fn getPointsInRadius samplePos r _gradDir _selVerts = 
-	(
-		local _vertexArr = #()
-		local _vertDistance = #()
-
-		for v in _selVerts do 
-		(
-			local _dist = distance samplePos obj.verts[v].pos
-
-			if _dist > r then 
-			(
-				continue
-			)
-
-			if _gradDir != 0 then 
-			(
-				local v1 = normalize (obj.verts[v].pos - samplePos)
-				local v2 = normalize _gradDir
-				if (dot v1 v2 ) < 0 then
-				(
-					continue
-				)
-			)
-
-			append _vertexArr v
-			append _vertDistance _dist
-		)
-		return #(_vertexArr, _vertDistance)
-	),
-
-	fn getVertexArr _samplePos _r _gradDir _selVerts =
-	(
-		local closestPointsInfo = getPointsInRadius _samplePos _r _gradDir _selVerts
-		
-		return closestPointsInfo	
-	),
-
-	fn computeClusterPos _vertexArr = 
-	(
-		local _clusterPos = point3 0 0 0
-		for v in _vertexArr do 
-		(
-			local newPos = obj.verts[v].pos / (_vertexArr.count as float)
-			_clusterPos = _clusterPos + newPos
-		)
-
-		return _clusterPos
-	)
-
-)
-
-
-Fn getTopFace obj selFaces =
-(
-	local topFacePos = point3 0 0 0
-	local topFaceIndex = 0
-
-	for f in selFaces do 
-	(
-		local facePos = polyop.getFaceCenter obj f 
-		if facePos[3] > topFacePos[3] then 
-		(
-			topFacePos = facePos
-			topFaceIndex = f
-		)
-	)
-
-	return #(topFacePos, topFaceIndex)
-)
-	
-Fn computeInitialSampleGradDirection _vertCluster _startSamplePos _selVerts = 
-(
-	local _closestPointsInfo0 = (_vertCluster.getVertexArr _startSamplePos sampleRadius 0 _selVerts)
-	local _closestPointsInfo1 = (_vertCluster.getVertexArr _startSamplePos (sampleRadius * 2.0) 0 _selVerts)
-
-	local _clusterPos0 = _vertCluster.computeClusterPos _closestPointsInfo0[1]
-	local _clusterPos1 = _vertCluster.computeClusterPos _closestPointsInfo1[1]
-
-	local _initGradDir = _clusterPos1 - _clusterPos0
-
-	return _initGradDir
-)	
-
-
-
-
-Fn GetAllClumpingGroup obj = 
-(
-	allColor = #()
-	allClumpingVertArr = #()
-
-	for i = 1 to 3 do 
-	(
-		for c = 16 to 256 by 16 do 
-		(
-			local newCol = black
-			if i == 1 do newCol = color c 0 0
-			if i == 2 do newCol = color 0 c 0
-			if i == 3 do newCol = color 0 0 c
-
-			vertArr = (meshop.getVertsByColor obj.mesh newCol 0 0 0) as array 
-			if vertArr.count > 0 do append allClumpingVertArr vertArr 
-		)
-	)
-	return allClumpingVertArr
-)
-
-
-
-Fn RefreshClumpingList lbClumpingGroup obj = 
-(
-	AllClumpVertGroupArr = GetAllClumpingGroup obj
-	lbClumpingGroup.items = for i = 1 to AllClumpVertGroupArr.count collect (i as string) 
-)
-
 
 
 
@@ -278,15 +171,6 @@ Fn RefreshClumpingList lbClumpingGroup obj =
 clearListener()
 
 
-Fn OnSplineUpdate ev nd = 
-(
-	if ClassOf(GetAnimByHandle nd[1]) != line then return()
-
-	vertArr = for v in m.verts collect v.index
-	DeformHairCards m vertArr
-	SaveCurveSample $ 1000
-
-)
 
 
 try (closeRolloutFloater HairToolset) catch()
@@ -295,14 +179,9 @@ HairToolset = newRolloutFloater "Hair Toolset" 400 1000 0 0
 addrollout  HairBuilder HairToolset
 addrollout  HairEditor 	HairToolset
 addRollout  GraphEditor HairToolset
-addrollout  HairRigger 	HairToolset
+-- addrollout  HairRigger 	HairToolset
 
 
 
 
 
-
-callbackItem = undefined
-gc light:true
-
-callbackItem = NodeEventCallback mouseUp:true geometryChanged:OnSplineUpdate

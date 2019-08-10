@@ -94,7 +94,6 @@ Fn BindGuideline hairGeo verts =
 
 )
 
-
 Fn GetAllBindingGroup obj = 
 (
 	allColor = #()
@@ -121,7 +120,6 @@ Fn GetAllBindingGroup obj =
 
 Fn BuildHairCardMesh guideline = 
 (
-
 	local vertArr = #()
 	local faceArr = #()
 	local paramsArr = #()
@@ -156,49 +154,36 @@ Fn BuildHairCardMesh guideline =
 			append faceArr [v,v+2,v+1]
 	)
 
-	m = mesh vertices:vertArr faces:faceArr
-	m.backfacecull = off
-	select m 
+	local newHairCard = mesh vertices:vertArr faces:faceArr
+	newHairCard.backfacecull = off
+	select newHairCard 
 	macros.run "Modifier Stack" "Convert_to_Poly"
 
-	chanIndex = chanUtil.CreateChannel m ChannelName_InitialPosition
-	channelInfo.CopyChannel m 1 0
-	channelInfo.PasteChannel m 3 chanIndex
+	chanIndex = chanUtil.CreateChannel newHairCard ChannelName_InitialPosition
+	channelInfo.CopyChannel newHairCard 1 0
+	channelInfo.PasteChannel newHairCard 3 chanIndex
 
-	paramChannelIndex = chanUtil.CreateChannel m ChannelName_CurveParams
+	paramChannelIndex = chanUtil.CreateChannel newHairCard ChannelName_CurveParams
 
 	macros.run "Modifier Stack" "Convert_to_Poly"
 
 
 	for v = 1 to vertArr.count do 
 	(
-		polyop.setMapVert m paramChannelIndex v (point3 paramsArr[v] 0 0)
+		polyop.setMapVert newHairCard paramChannelIndex v (point3 paramsArr[v] 0 0)
 	)
 
+	BindGuideline newHairCard (for v in newHairCard.verts collect v.index)
+
+	return newHairCard
 )
 
-
-Fn SaveGuidelineData guideline sampleNum = 
-(
-	local allPos = stringstream ""
-
-	format "#("  to:allPos
-	for i = 1 to sampleNum do 
-	(
-		local param = (i as float) / (sampleNum as float)
-		local pos = interpCurve3D guideline 1 param
-		if i == sampleNum then format "%" pos to:allPos
-		else format "%," pos to:allPos
-	)
-	format ")"  to:allPos
-
-	setUserPropBuffer guideline  (allPos as string)
-)
 
 
 Fn DeformHairCards hairGeo vertArr = 
 (
-	allCurvePos = execute(getUserPropBuffer $)
+-- 	allCurvePos = execute(getUserPropBuffer $)
+	allCurvePos = execute(getUserProp "SplineData" $)
 
 	for v = 1 to vertArr.count do 
 	(
@@ -217,24 +202,153 @@ Fn DeformHairCards hairGeo vertArr =
 	)
 )
 
+Fn InitializeHairGuideline guideline = 
+(
+	setUserProp guideline "SplineData" #()
+	setUserProp guideline "LinkedHairGeo" #()
+)
 
 
+Fn CheckSelectionIsGuideline  = 
+(
+	if selection.count != 1 then return false
+	if (classof selection[1] != line) then return false
+
+	local userInput = undefined
+	if (MatchPattern selection[1].name pattern:"HairGuide_*") == false then 
+	(
+		userInput = yesNoCancelBox "Initialize the guideline?"
+
+		if userInput == #yes then 
+		(
+			append AllGuideline selection[1]
+			selection[1].name = "HairGuide_" + (AllGuideline.count as string)
+			InitializeHairGuideline selection[1]
+
+			return true
+		)
+		
+		return false
+	)
+	return true
+
+)
+
+
+
+
+
+Fn AddLinkedHairCardsVerts guideline newHairGeo = 
+(
+	local linkedHairMesh = execute( getUserProp guideline "LinkedHairGeo")
+	local index = findItem linkedHairMesh newHairGeo.name
+
+	if index == 0 then 
+	(
+		append linkedHairMesh newHairGeo.name
+		setUserProp guideline "LinkedHairGeo" linkedHairMesh
+
+		local n = "LinkedVertArr_" + (newHairGeo.name)
+		local p = for vert in newHairGeo.verts collect vert.index
+		SetArrayProperty guideline n p
+	)	
+)
+
+
+Fn UpdateLinkedHairCardsVerts guideline hairGeo verts = 
+(
+	local linkedHairMesh = execute( getUserProp guideline "LinkedHairGeo")
+	local index = findItem linkedHairMesh newHairGeo.name
+	
+	if index == 0 then return false 
+	
+	local linkedVertArr = execute (getUserProp guideline "LinkedVertArr")
+	linkedVertArr[index] = (for v in verts collect v)
+	SetArrayProperty guideline "LinkedVertArr" linkedVertArr
+
+)
+
+Fn RemoveLinkedHairCardsVerts guideline hairGeo =
+(
+	local linkedHairMesh = execute( getUserProp guideline "LinkedHairGeo")
+	local index = findItem linkedHairMesh newHairGeo.name
+	
+	if index == 0 then return false 
+
+	linkedHairMesh = deleteItem linkedHairMesh index
+
+	setUserProp guideline "LinkedHairGeo" linkedHairMesh
+
+	local linkedVertArr = execute (getUserProp guideline "LinkedVertArr")
+	linkedVertArr = deleteItem linkedVertArr index
+
+	SetArrayProperty guideline "LinkedVertArr" linkedVertArr
+)
+
+
+Fn SaveGuidelineData guideline sampleNum = 
+(
+	local allPos = stringstream ""
+
+	format "#("  to:allPos
+	for i = 1 to sampleNum do 
+	(
+		local param = (i as float) / (sampleNum as float)
+		local pos = interpCurve3D guideline 1 param
+		if i == sampleNum then format "%" pos to:allPos
+		else format "%," pos to:allPos
+	)
+	format ")"  to:allPos
+
+-- 	setUserPropBuffer guideline  (allPos as string)
+	setUserProp guideline "SplineData" (allPos as string)
+
+)
 
 
 rollout HairBuilder "Hair Builder" 
 (
-	button btnNewHairCards "New Hair Card" align:#left width:120
+	button btnSplineFromLine "Use Line Tool" align:#left width:120 across:3
+
+	button btnNewHairCards "New Hair Card" align:#left width:120 across:3
+
+	on btnSplineFromLine pressed do 
+	(
+		max create mode 
+		macros.run "Objects Shapes" "Lines"
+	)
 
 	on btnNewHairCards pressed do
 	(
 		if selection.count == 1 and (classof selection[1] == line) then 
 		(
-			local sp = selection[1]
-			BuildHairCardMesh sp
-			SaveGuidelineData sp 1000
+			if (CheckSelectionIsGuideline()) do 
+			(
+				local sp = (deepcopy (selection as array))[1]
+				local newHairCard = BuildHairCardMesh sp
+				SaveGuidelineData sp 1000
+				AddLinkedHairCardsVerts sp newHairCard  
+			)
 		)
+			
 	)
 )
 
+Fn OnSplineUpdate ev nd = 
+(
+	if ClassOf(GetAnimByHandle nd[1]) != line then return()
 
+	vertArr = for v in m.verts collect v.index
+	DeformHairCards m vertArr
+	SaveGuidelineData $ 1000  
+
+)
+
+
+
+
+callbackItem = undefined
+gc light:true
+
+callbackItem = NodeEventCallback mouseUp:true geometryChanged:OnSplineUpdate
 )

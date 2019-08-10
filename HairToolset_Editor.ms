@@ -1,5 +1,7 @@
 Fn CheckMesh obj = 
 (
+	if classof obj != Editable_Poly then return false
+
 	local yesNoCancel
 	if (getNumCPVVerts obj.mesh) != obj.mesh.verts.count then 
 	(
@@ -278,22 +280,21 @@ rollout HairEditor "Hair Editor"
 	(
 		hairGeo = SetSelectionAsHairObj()
 
-		print hairGeo
-
 		local isClumpingMeshValid = CheckMesh hairGeo
 		
 		if isClumpingMeshValid then 
 		(
 			btnSetHairObj.caption = hairGeo.name
+			
+			RefreshGuidelineList lbHairGroup hairGeo
+		
 		)
 		else 
 		(
-			messagebox "Didn't set hair object"
+			messagebox "Invalid hair object"
 		)
 
-		RefreshGuidelineList lbHairGroup hairGeo
-		zoom GraphEditor.ccClumpingCurve #all 
-		zoom GraphEditor.ccTwistCurve #all 
+
 	)
 	on btnRefresh pressed do 
 	(
@@ -331,10 +332,12 @@ rollout HairEditor "Hair Editor"
 		CleanupInValidGuideline()
 
 		local guideline = CreateGuidelineFromVerts hairGeo selVerts
-		
+		InitializeHairGuideline guideline
+
 		SampleGuildeLine guideline hairGeo selVerts
-				
-		BindGuideline hairGeo selVerts
+		
+		BindGuideline hairGeo selVerts guideline
+		SaveGuidelineData guideline 1000
 
 		RefreshGuidelineList lbHairGroup hairGeo
 		lbHairGroup.selection = lbHairGroup.items.count

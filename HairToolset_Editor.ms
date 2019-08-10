@@ -133,7 +133,10 @@ Fn ComputeInitialGradDirection _vertCluster _startSamplePos _selVerts =
 Fn RefreshGuidelineList lbClumpingGroup obj = 
 (
 	AllClumpVertGroupArr = GetAllBindingGroup obj
-	lbClumpingGroup.items = for i = 1 to AllClumpVertGroupArr.count collect (i as string) 
+	local guidelines = AllClumpVertGroupArr[2]
+	print guidelines
+
+	lbClumpingGroup.items = for i = 1 to guidelines.count collect (guidelines[i].name) 
 )
 
 
@@ -154,6 +157,7 @@ Fn ResolveFinalPosition hairGeo ccClumpingCurve ccTwistCurve =
 	local chanCurveParamIndex = chanUtil.GetChannelIndex hairGeo ChannelName_CurveParams
 	local chanInitPosIndex = chanUtil.GetChannelIndex hairGeo ChannelName_InitialPosition
 
+	
 	for v in selVerts do 
 	(
 		local param = (polyop.getMapVert hairGeo chanCurveParamIndex v)[1]
@@ -248,7 +252,6 @@ Fn CreateGuidelineFromVerts obj verts =
 		addKnot guideline 1 #smooth #curve pos
 	)
 	updateShape guideline
-	append AllGuideline guideline
 
 	return guideline
 )
@@ -257,7 +260,11 @@ Fn CleanupInValidGuideline =
 (
 	for i = AllGuideline.count to 1 by -1 do
 	(
-		if (isValidNode AllGuideline[i] == false) then deleteItem AllGuideline i 
+		if (isValidNode AllGuideline[i] == false) then 
+		(
+			print "delete invalid guideline"
+			deleteItem AllGuideline i 
+		)
 	) 
 
 )
@@ -305,7 +312,7 @@ rollout HairEditor "Hair Editor"
 
 	on lbHairGroup selected itm do 
 	(
-		local verts = AllClumpVertGroupArr[(lbHairGroup.selection as integer)]
+		local verts = AllClumpVertGroupArr[1][(lbHairGroup.selection as integer)]
 		polyop.setFaceSelection hairGeo (polyop.getFacesUsingVert hairGeo verts)
 		
 		selFaces = polyop.getFaceSelection hairGeo
@@ -322,30 +329,39 @@ rollout HairEditor "Hair Editor"
 		print curveInfo
 		ForceCompleteRedraw()
 	)
+
+
 	on btnAddClumping pressed do 
 	(
 		clearListener()
 		local selFaces = polyop.getFaceSelection hairGeo
 		local selVerts = polyop.getVertsUsingFace hairGeo selFaces
-		hairGeo.showVertexColors = on
 
-		CleanupInValidGuideline()
+		if selVerts.count > 0 then 
+		(
+			hairGeo.showVertexColors = on
 
-		local guideline = CreateGuidelineFromVerts hairGeo selVerts
-		InitializeHairGuideline guideline
+			CleanupInValidGuideline()
 
-		SampleGuildeLine guideline hairGeo selVerts
+			local guideline = CreateGuidelineFromVerts hairGeo selVerts
+
+			format "btnAddClumping guideline % \n" guideline.name
+			InitializeHairGuideline guideline
+
+			SampleGuildeLine guideline hairGeo selVerts
+			
+			BindGuideline hairGeo selVerts guideline
+			SaveGuidelineData guideline 1000
+
+			RefreshGuidelineList lbHairGroup hairGeo
+			lbHairGroup.selection = lbHairGroup.items.count
+
+			-- Save the curve infomation 
+			local allCurveInfo = crvUtil.GetCurveInfo AllClumpingCurveControl
+			crvUtil.SaveCurveInfo hairGeo allCurveInfo guideline
+
+		)
 		
-		BindGuideline hairGeo selVerts guideline
-		SaveGuidelineData guideline 1000
-
-		RefreshGuidelineList lbHairGroup hairGeo
-		lbHairGroup.selection = lbHairGroup.items.count
-
-		-- Save the curve infomation 
-		local allCurveInfo = crvUtil.GetCurveInfo AllClumpingCurveControl
-		crvUtil.SaveCurveInfo hairGeo allCurveInfo guideline
-
 	)
 
 	on btnResampleGuilde pressed do 

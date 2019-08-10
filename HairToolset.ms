@@ -4,7 +4,7 @@ sampleHeightMax = 185
 sampleHeightMin = 137
 boneNumPerSpline = 3
 
-sampleRadius = 5
+sampleRadius = 10
 
 headBone = $BnHead
 
@@ -36,10 +36,6 @@ Fn IntToRGB intVal =
 
 	return col
 )
-
-testColor = color 255 64 0
-x = RGBToInt testColor
-IntToRGB x 
 
 Fn DeleteUserProp node prop = 
 (
@@ -130,7 +126,6 @@ struct CurveUtility
 				append outTangentArr curve.points[i].outTangent
 				append bezierArr curve.points[i].bezier
 				append cornerArr curve.points[i].corner
-
 			)
 			curCurveInfo = #(nameStr, valueArr, inTangentArr, outTangentArr, bezierArr, cornerArr)
 
@@ -172,6 +167,7 @@ struct CurveUtility
 			curve.points[p].corner = cornerArr[p]
 		)
 	),
+
 	Fn RemoveCurveInfo obj guideline = 
 	(
 		DeleteUserProp obj ("CurveInfo_" + guideline.name)
@@ -206,3 +202,45 @@ addRollout  GraphEditor HairToolset
 
 
 
+Fn OnSplineUpdate ev nd = 
+(
+	local cls = ClassOf(GetAnimByHandle nd[1])
+	if cls != line and cls != SplineShape do return()
+
+	print "OnSplineUpdate"
+
+	bindHairGeoName = execute (getUserProp $ "LinkedHairGeo")
+
+	local guidelineIndex = GetGuidelineIndex $
+	local guidelineCol = IntToRGB guidelineIndex
+
+	if bindHairGeoName != undefined then 
+	(
+		for n in bindHairGeoName do 
+		(
+			local nd = getNodeByName n
+			if isValidNode nd do
+			(
+				vertArr = (meshOp.getVertsByColor nd.mesh guidelineCol 0 0 0) as array
+
+-- 				vertArr = for v in nd.verts collect v.index
+				DeformHairCards nd vertArr
+				SaveGuidelineData $ 1000  
+
+			)
+		)
+	)
+)
+
+Fn OnGuidelineDeleted ev nd = 
+(
+	CleanupInValidGuideline()
+)
+
+
+
+callbackItem = undefined
+gc light:true
+
+callbackItem = NodeEventCallback mouseUp:true geometryChanged:OnSplineUpdate
+callbackItem = NodeEventCallback deleted:OnGuidelineDeleted

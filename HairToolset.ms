@@ -4,7 +4,7 @@ sampleHeightMax = 185
 sampleHeightMin = 137
 boneNumPerSpline = 3
 
-sampleRadius = 10
+sampleRadius = 5
 
 headBone = $BnHead
 
@@ -37,6 +37,20 @@ Fn IntToRGB intVal =
 	return col
 )
 
+Fn DeleteUserPropByPattern node propPattern = 
+(
+	local buff = (getUserPropBuffer node) as StringStream
+	local newb = stringStream ""
+ 	while not eof buff do
+ 	(
+  		str = readLine buff
+  		if str != "" and not matchpattern str pattern:propPattern do 
+  		(
+  			format "%\n" str to:newb
+ 		)
+ 	)
+ 	setUserPropBuffer node (replace_LF_with_CRLF (newb as string))
+)
 Fn DeleteUserProp node prop = 
 (
 	if getUserProp node prop == undefined do return()
@@ -118,7 +132,6 @@ struct CurveUtility
 			local bezierArr = #()
 			local cornerArr = #()
 
-
 			for i = 1 to curve.points.count do 
 			(
 				append valueArr curve.points[i].value
@@ -145,6 +158,7 @@ struct CurveUtility
 	Fn LoadCurveInfo obj guideline = 
 	(
 		local curveInfo = getUserProp obj ("CurveInfo_" + guideline.name)
+		print curveInfo
 		
 		return curveInfo
 	),
@@ -158,9 +172,18 @@ struct CurveUtility
 		local bezierArr = curveInfo[5]
 		local cornerArr = curveInfo[6]
 
-		for p = 1 to curve.points.count do 
+-- 		break()
+
+		for p = curve.points.count to 1 by -1 do 
 		(
-			curve.points[p].value = valArr[p]
+			deletePoint curve p
+		)
+
+		curve.numPoints = valArr.count
+
+		for p = 1 to valArr.count do 
+		(
+			curve.points[p].value  = valArr[p]
 			curve.points[p].inTangent = inTangentArr[p]
 			curve.points[p].outTangent = outTangentArr[p]
 			curve.points[p].bezier = bezierArr[p]
@@ -183,8 +206,6 @@ filein "HairToolset_Rigger.ms"
 
 
 
-
-
 clearListener()
 
 
@@ -195,10 +216,8 @@ HairToolset = newRolloutFloater "Hair Toolset" 400 1000 0 0
 
 addrollout  HairBuilder HairToolset
 addrollout  HairEditor 	HairToolset
-addRollout  GraphEditor HairToolset
+-- addRollout  GraphEditor HairToolset
 -- addrollout  HairRigger 	HairToolset
-
-
 
 
 
@@ -232,15 +251,9 @@ Fn OnSplineUpdate ev nd =
 	)
 )
 
-Fn OnGuidelineDeleted ev nd = 
-(
-	CleanupInValidGuideline()
-)
-
 
 
 callbackItem = undefined
 gc light:true
 
 callbackItem = NodeEventCallback mouseUp:true geometryChanged:OnSplineUpdate
-callbackItem = NodeEventCallback deleted:OnGuidelineDeleted

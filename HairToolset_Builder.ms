@@ -58,8 +58,17 @@ Fn GuideWorldMatrixFromSparsingData dataArray index =
 	return mat
 )
 
-
-
+Fn CleanupInValidGuideline = 
+(
+	for i = AllGuideline.count to 1 by -1 do
+	(
+		if (isValidNode AllGuideline[i] == false) then 
+		(
+			print "delete invalid guideline"
+			deleteItem AllGuideline i 
+		)
+	) 
+)
 
 
 Fn GetGuidelineIndex guideline = 
@@ -78,8 +87,6 @@ Fn GetGuidelineByIndex index =
 	return undefined
 )
 
-
-
 Fn GetGuideline hairGeo vertIndexArr = 
 (
 	local vertIndex = vertIndexArr[1]
@@ -89,9 +96,6 @@ Fn GetGuideline hairGeo vertIndexArr =
 
 	return guideline
 )
-
-
-
 
 Fn BindGuideline hairGeo verts guideline =
 (
@@ -115,18 +119,14 @@ Fn BindGuideline hairGeo verts guideline =
 	)	
 )
 
--- Fn GetBindGroup obj guideline = 
--- (
--- 	local guidelineIndex = findItem AllGuideline guideline
-
--- 	if bindCol[1] > 0 then 
--- )
-
 Fn GetAllBindingGroup obj = 
 (
+	if obj == undefined then return false
+
 	local clumpingVertArr = #()
 	local bindGuidelineArr = #()
 
+	CleanupInValidGuideline()
 
 	for guideline in AllGuideline do 
 	(
@@ -143,9 +143,6 @@ Fn GetAllBindingGroup obj =
 
 	return #(clumpingVertArr, bindGuidelineArr)
 )
--------------- Guildeline Managing Functions End --------------
----------------------------------------------------------------
-
 
 Fn BuildHairCardMesh guideline = 
 (
@@ -208,32 +205,6 @@ Fn BuildHairCardMesh guideline =
 	return newHairCard
 )
 
-
-
-Fn DeformHairCards hairGeo vertArr = 
-(
--- 	allCurvePos = execute(getUserPropBuffer $)
-	allCurvePos = execute(getUserProp $ "SplineData")
-
-	local paramChannelIndex = chanUtil.GetChannelIndex hairGeo ChannelName_CurveParams
-
-	for v = 1 to vertArr.count do 
-	(
-		local param = (polyop.getMapVert hairGeo paramChannelIndex v)[1]
-		local index = ((param * (allCurvePos.count - 1)) as integer) + 1
-
-		local prevCurveMat = GuideWorldMatrixFromSparsingData allCurvePos index
-		local invPrevCurveMat = inverse prevCurveMat
-
-		local newWorldMat = GuideWorldMatrix $ param
-		
-		local newVertPosMat = transMatrix hairGeo.verts[v].pos
-		newVertPosMat = newVertPosMat * invPrevCurveMat * newWorldMat
-
-		hairGeo.verts[v].pos = newVertPosMat.translation
-	)
-)
-
 Fn InitializeHairGuideline guideline = 
 (
 	local index = 0
@@ -257,8 +228,6 @@ Fn InitializeHairGuideline guideline =
 	append AllGuideline guideline
 
 )
-
-
 
 Fn CheckSelectionIsGuideline  = 
 (
@@ -284,11 +253,6 @@ Fn CheckSelectionIsGuideline  =
 
 )
 
-
-
-
-
-
 Fn SaveGuidelineData guideline sampleNum = 
 (
 	local allPos = stringstream ""
@@ -302,11 +266,123 @@ Fn SaveGuidelineData guideline sampleNum =
 		else format "%," pos to:allPos
 	)
 	format ")"  to:allPos
-
--- 	setUserPropBuffer guideline  (allPos as string)
 	setUserProp guideline "SplineData" (allPos as string)
 
 )
+
+Fn CreateGuidelineFromVerts obj verts = 
+(
+	local AllVertexCluster = #()
+
+	local initVertCluster = VertexCluster()
+	initVertCluster.obj = hairGeo
+
+	local initialSamplePos = (GetTopVert obj verts)[1] 
+	initVertCluster.clusterPos = initialSamplePos
+
+	append AllVertexCluster initVertCluster
+
+	local gradDir = ComputeInitialGradDirection initVertCluster initialSamplePos verts
+	gradDir = normalize gradDir
+
+	safeBreak = 0
+	while gradDir.z < 0 and safeBreak < 100 do 
+	(
+		previousCluster = AllVertexCluster[AllVertexCluster.count]
+
+		local samplePos = previousCluster.clusterPos + gradDir
+
+		newVertClst = VertexCluster()
+		newVertClst.obj = hairGeo
+		newVertClst.vertexArr = (newVertClst.getVertexArr samplePos sampleRadius gradDir verts)[1]
+		newVertClst.clusterPos = newVertClst.computeClusterPos newVertClst.vertexArr
+
+		if newVertClst.vertexArr.count > 0 then 
+		(
+			append AllVertexCluster newVertClst
+			gradDir = newVertClst.clusterPos - previousCluster.clusterPos
+			gradDir = normalize gradDir
+		)
+		else 
+		(
+			exit
+		)
+		safeBreak += 1
+	)
+
+	guideline = splineShape name:("HairGuide_" + ((AllGuideline.count + 1) as string))
+	addnewSpline guideline
+
+	for c in AllVertexCluster do 
+	(
+		local pos = c.clusterPos
+		addKnot guideline 1 #smooth #curve pos
+	)
+	updateShape guideline
+
+	return guideline
+)
+
+Fn FindGuidelineBinding guideline = 
+(
+	local bindGeometryList = #()
+
+	local guidelineIndex = GetGuidelineIndex guideline
+	local guidelineCol = IntToRGB guidelineIndex
+
+	local propName = trimRight ("CurveInfo_" + guideline.name) 
+	for geo in geometry do 
+	(
+		local vertArr = (meshOp.getVertsByColor geo.mesh guidelineCol 0 0 0) as array
+
+		if vertArr.count > 0 do append bindGeometryList geo
+	)
+	return bindGeometryList
+)
+
+
+Fn SelectNotUsedGuideline = 
+(
+	CleanupInValidGuideline()
+
+	local notUsedGuideline = #()
+	for guideline in AllGuideline do 
+	(
+		local bindGeos = FindGuidelineBinding guideline
+
+		if bindGeos.count == 0 then append notUsedGuideline guideline
+	)
+
+	select notUsedGuideline 
+)
+
+
+
+Fn DeformHairCardsUsingGuideline hairGeo vertArr = 
+(
+	allCurvePos = execute(getUserProp $ "SplineData")
+
+	local paramChannelIndex = chanUtil.GetChannelIndex hairGeo ChannelName_CurveParams
+
+	for v = 1 to vertArr.count do 
+	(
+		local param = (polyop.getMapVert hairGeo paramChannelIndex v)[1]
+		local index = ((param * (allCurvePos.count - 1)) as integer) + 1
+
+		local prevCurveMat = GuideWorldMatrixFromSparsingData allCurvePos index
+		local invPrevCurveMat = inverse prevCurveMat
+
+		local newWorldMat = GuideWorldMatrix $ param
+		
+		local newVertPosMat = transMatrix hairGeo.verts[v].pos
+		newVertPosMat = newVertPosMat * invPrevCurveMat * newWorldMat
+
+		hairGeo.verts[v].pos = newVertPosMat.translation
+	)
+)
+
+-------------- Guildeline Managing Functions End --------------
+---------------------------------------------------------------
 
 
 rollout HairBuilder "Hair Builder" 

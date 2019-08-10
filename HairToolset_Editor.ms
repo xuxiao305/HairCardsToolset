@@ -132,6 +132,8 @@ Fn ComputeInitialGradDirection _vertCluster _startSamplePos _selVerts =
 
 Fn RefreshGuidelineList lbClumpingGroup obj = 
 (
+	if obj == undefined then return false
+
 	AllClumpVertGroupArr = GetAllBindingGroup obj
 	local guidelines = AllClumpVertGroupArr[2]
 	print guidelines
@@ -157,7 +159,7 @@ Fn ResolveFinalPosition hairGeo ccClumpingCurve ccTwistCurve =
 	local chanCurveParamIndex = chanUtil.GetChannelIndex hairGeo ChannelName_CurveParams
 	local chanInitPosIndex = chanUtil.GetChannelIndex hairGeo ChannelName_InitialPosition
 
-	
+
 	for v in selVerts do 
 	(
 		local param = (polyop.getMapVert hairGeo chanCurveParamIndex v)[1]
@@ -203,85 +205,137 @@ Fn SetSelectionAsHairObj =
 	return selection[1] 
 )
 
-Fn CreateGuidelineFromVerts obj verts = 
+Fn AddGuideline lbHairGroup = 
 (
-	local AllVertexCluster = #()
+	if hairGeo == undefined then return false
 
-	local initVertCluster = VertexCluster()
-	initVertCluster.obj = hairGeo
+	clearListener()
+	local selFaces = polyop.getFaceSelection hairGeo
+	local selVerts = polyop.getVertsUsingFace hairGeo selFaces
 
-	local initialSamplePos = (GetTopVert obj verts)[1] 
-	initVertCluster.clusterPos = initialSamplePos
+	if selVerts.count == 0 then return false 
+	
+	hairGeo.showVertexColors = on
 
-	append AllVertexCluster initVertCluster
+	CleanupInValidGuideline()
 
-	local gradDir = ComputeInitialGradDirection initVertCluster initialSamplePos verts
-	gradDir = normalize gradDir
+	local guideline = CreateGuidelineFromVerts hairGeo selVerts
 
-	safeBreak = 0
-	while gradDir.z < 0 and safeBreak < 100 do 
+	format "btnAddClumping guideline % \n" guideline.name
+	InitializeHairGuideline guideline
+
+	SampleGuildeLine guideline hairGeo selVerts
+	
+	BindGuideline hairGeo selVerts guideline
+	SaveGuidelineData guideline 1000
+
+	RefreshGuidelineList lbHairGroup hairGeo
+	lbHairGroup.selection = lbHairGroup.items.count
+
+	-- Save the curve infomation 
+	local allCurveInfo = crvUtil.GetCurveInfo AllClumpingCurveControl
+
+	crvUtil.SaveCurveInfo hairGeo allCurveInfo guideline
+
+	return true
+		
+)
+Fn RemoveGuidelineBinding lbHairGroup = 
+(
+	if hairGeo == undefined then return false
+
+	clearListener()
+
+	local selFaces = polyop.getFaceSelection hairGeo
+	local selVerts = polyop.getVertsUsingFace hairGeo selFaces 
+	if selVerts.count == 0 then return false 
+
+	polyop.setVertColor hairGeo 0 selVerts black
+
+	RefreshGuidelineList lbHairGroup hairGeo 
+
+	local chanInitPosIndex = chanUtil.GetChannelIndex hairGeo ChannelName_InitialPosition
+
+	for v in (selVerts as array) do 
 	(
-		previousCluster = AllVertexCluster[AllVertexCluster.count]
-
-		local samplePos = previousCluster.clusterPos + gradDir
-
-		newVertClst = VertexCluster()
-		newVertClst.obj = hairGeo
-		newVertClst.vertexArr = (newVertClst.getVertexArr samplePos sampleRadius gradDir verts)[1]
-		newVertClst.clusterPos = newVertClst.computeClusterPos newVertClst.vertexArr
-
-		if newVertClst.vertexArr.count > 0 then 
-		(
-			append AllVertexCluster newVertClst
-			gradDir = newVertClst.clusterPos - previousCluster.clusterPos
-			gradDir = normalize gradDir
-		)
-		else 
-		(
-			exit
-		)
-		safeBreak += 1
+		local localPos = polyop.getMapVert hairGeo chanInitPosIndex v 
+		local newWorldPos = hairGeo.pos + localPos
+		hairGeo.verts[v].pos = newWorldPos
 	)
-
-	guideline = splineShape name:("HairGuide_" + ((AllGuideline.count + 1) as string))
-	addnewSpline guideline
-
-	for c in AllVertexCluster do 
-	(
-		local pos = c.clusterPos
-		addKnot guideline 1 #smooth #curve pos
-	)
-	updateShape guideline
-
-	return guideline
 )
 
-Fn CleanupInValidGuideline = 
+Fn ReSampleGuideline = 
 (
-	for i = AllGuideline.count to 1 by -1 do
-	(
-		if (isValidNode AllGuideline[i] == false) then 
-		(
-			print "delete invalid guideline"
-			deleteItem AllGuideline i 
-		)
-	) 
+	if hairGeo == undefined then return false 
+	clearListener()
+	selFaces = polyop.getFaceSelection hairGeo
+	selVerts = (polyop.getVertsUsingFace hairGeo selFaces) as array
 
+	if selVerts.count == 0 then return false 
+
+	local guideline = GetGuideline hairGeo selVerts
+
+	SampleGuildeLine guideline hairGeo selVerts
 )
+
+Fn UpdateVertBindingPosition = 
+(
+	if hairGeo == undefined then return false 
+
+	clearListener()
+
+	local selFaces = polyop.getFaceSelection hairGeo
+	local selVerts = polyop.getVertsUsingFace hairGeo selFaces 
+
+	if selVerts.count == 0 then return false 
+	
+	polyop.setVertColor hairGeo 0 selVerts black
+
+	RefreshGuidelineList lbHairGroup hairGeo 
+
+	local chanInitPosIndex = chanUtil.GetChannelIndex hairGeo ChannelName_InitialPosition
+
+	for v in (selVerts as array) do 
+	(
+		local localPos = hairGeo.verts[v].pos - hairGeo.pos
+		polyop.setMapVert hairGeo chanInitPosIndex v localPos
+	)
+)
+
 
 rollout HairEditor "Hair Editor"
 (
 	button btnSetHairObj "Pick Hair Mesh" align:#left width:120 across:3
 	button btnAddClumping "Add Clumping" align:#middle width:120 across:3
-	button btnRemoveBinding "Remove Clumping"  align:#right width:120 across:3
+	button btnRemoveGuidelineBinding "Remove Clumping"  align:#right width:120 across:3
 
 	button btnRefresh "Refresh" align:#left width:120 across:3
 	button btnResampleGuilde "Resample Guideline" align:#middle width:120 across:3
 	button btnUpdateInitialPos "Update Initial Pos" align:#right width:120 across:3 
+	button btnSelectUnusedGuideline "Select Unused" align:#right width:120 
 
 
 	listbox lbHairGroup "Hair Group" align:#left width:130 height:30
 
+	CurveControl ccClumpingCurve "Clumping Curve:"	height:200 width:350 align:#left numCurves:1 visible:true
+														x_range:[0.0,1.0] y_range:[0.0,1.0]
+														scrollValues:[0.0,1.0] commandMode:#move_xy
+														uiFlags:#(#upperToolbar, #lowerToolbar , #drawgrid, #xvalue)
+
+
+	CurveControl ccTwistCurve "Twist Curve:"	height:200 width:350 align:#left numCurves:1 visible:true
+														x_range:[0.0,1.0] y_range:[0.0,1.0]
+														scrollValues:[0.0,1.0] commandMode:#move_xy
+														uiFlags:#(#upperToolbar, #lowerToolbar , #drawgrid, #xvalue)
+
+
+	on HairEditor open do 
+	(
+		zoom ccClumpingCurve #all
+		zoom ccTwistCurve #all
+
+		AllClumpingCurveControl = #(ccClumpingCurve, ccTwistCurve)
+	)
 
 	on btnSetHairObj pressed do 
 	(
@@ -306,8 +360,8 @@ rollout HairEditor "Hair Editor"
 	on btnRefresh pressed do 
 	(
 		RefreshGuidelineList lbHairGroup hairGeo
-		zoom GraphEditor.ccClumpingCurve #all 
-		zoom GraphEditor.ccTwistCurve #all 
+		zoom ccClumpingCurve #all 
+		zoom ccTwistCurve #all 
 	)
 
 	on lbHairGroup selected itm do 
@@ -333,107 +387,39 @@ rollout HairEditor "Hair Editor"
 
 	on btnAddClumping pressed do 
 	(
-		clearListener()
-		local selFaces = polyop.getFaceSelection hairGeo
-		local selVerts = polyop.getVertsUsingFace hairGeo selFaces
-
-		if selVerts.count > 0 then 
+		local successed = AddGuideline lbHairGroup
+		if successed then 
 		(
-			hairGeo.showVertexColors = on
-
-			CleanupInValidGuideline()
-
-			local guideline = CreateGuidelineFromVerts hairGeo selVerts
-
-			format "btnAddClumping guideline % \n" guideline.name
-			InitializeHairGuideline guideline
-
-			SampleGuildeLine guideline hairGeo selVerts
+			ccClumpingCurve.curves[1].points[1].value = point2 0 1
+			ccClumpingCurve.curves[1].points[2].value = point2 1 0
+			ccTwistCurve.curves[1].points[1].value = point2 0 0
+			ccTwistCurve.curves[1].points[2].value = point2 0 0
 			
-			BindGuideline hairGeo selVerts guideline
-			SaveGuidelineData guideline 1000
-
-			RefreshGuidelineList lbHairGroup hairGeo
-			lbHairGroup.selection = lbHairGroup.items.count
-
-			-- Save the curve infomation 
-			local allCurveInfo = crvUtil.GetCurveInfo AllClumpingCurveControl
-			crvUtil.SaveCurveInfo hairGeo allCurveInfo guideline
-
+			zoom ccClumpingCurve #all 
+			zoom ccTwistCurve #all 
 		)
-		
 	)
 
 	on btnResampleGuilde pressed do 
 	(
-		clearListener()
-		selFaces = polyop.getFaceSelection hairGeo
-		selVerts = (polyop.getVertsUsingFace hairGeo selFaces) as array
-		local guideline = GetGuideline hairGeo selVerts
-
-		SampleGuildeLine guideline hairGeo selVerts
+		ReSampleGuideline()
 	)
 
-	on btnRemoveBinding pressed do 
+	on btnRemoveGuidelineBinding pressed do 
 	(
-		local selFaces = polyop.getFaceSelection hairGeo
-		local selVerts = polyop.getVertsUsingFace hairGeo selFaces 
-		
-		polyop.setVertColor hairGeo 0 selVerts black
-
-		RefreshGuidelineList lbHairGroup hairGeo 
-
-		local chanInitPosIndex = chanUtil.GetChannelIndex hairGeo ChannelName_InitialPosition
-
-		for v in (selVerts as array) do 
-		(
-			local localPos = polyop.getMapVert hairGeo chanInitPosIndex v 
-			local newWorldPos = hairGeo.pos + localPos
-			hairGeo.verts[v].pos = newWorldPos
-		)
+		RemoveGuidelineBinding lbHairGroup
 	)
 
 	on btnUpdateInitialPos pressed do 
 	(
-		local selFaces = polyop.getFaceSelection hairGeo
-		local selVerts = polyop.getVertsUsingFace hairGeo selFaces 
-		
-		polyop.setVertColor hairGeo 0 selVerts black
-
-		RefreshGuidelineList lbHairGroup hairGeo 
-
-		local chanInitPosIndex = chanUtil.GetChannelIndex hairGeo ChannelName_InitialPosition
-
-		for v in (selVerts as array) do 
-		(
-			local localPos = hairGeo.verts[v].pos - hairGeo.pos
-			polyop.setMapVert hairGeo chanInitPosIndex v localPos
-		)
+		UpdateVertBindingPosition()
 	)
 
-)
-
-rollout GraphEditor "Clumping Graph Editor"
-(
-	CurveControl ccClumpingCurve "Clumping Curve:"	height:200 width:350 align:#left numCurves:1 visible:true
-														x_range:[0.0,1.0] y_range:[0.0,1.0]
-														scrollValues:[0.0,1.0] commandMode:#move_xy
-														uiFlags:#(#upperToolbar, #lowerToolbar , #drawgrid, #xvalue)
-
-
-	CurveControl ccTwistCurve "Twist Curve:"	height:200 width:350 align:#left numCurves:1 visible:true
-														x_range:[0.0,1.0] y_range:[0.0,1.0]
-														scrollValues:[0.0,1.0] commandMode:#move_xy
-														uiFlags:#(#upperToolbar, #lowerToolbar , #drawgrid, #xvalue)
-
-
-	on GraphEditor open do 
+	on btnSelectUnusedGuideline pressed do 
 	(
-		zoom ccClumpingCurve #all
-		zoom ccTwistCurve #all
-
-		AllClumpingCurveControl = #(ccClumpingCurve, ccTwistCurve)
+		SelectNotUsedGuideline()
 	)
+
 	on ccClumpingCurve ptChanged ci val do
 	(
 		clearListener()
@@ -458,4 +444,5 @@ rollout GraphEditor "Clumping Graph Editor"
 		clearListener()
 		ResolveFinalPosition hairGeo ccClumpingCurve ccTwistCurve
 	)
-) 
+)
+

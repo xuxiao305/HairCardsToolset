@@ -1,24 +1,45 @@
 hairGeo = undefined
-hairObj = undefined
 
 sampleHeightMax = 185
 sampleHeightMin = 137
 boneNumPerSpline = 3
 
 sampleRadius = 5
-hairGeo
-hairObj 
+
 headBone = $BnHead
 
 ChannelName_CurveParams = "CurveParams"
 ChannelName_InitialPosition = "InitialPos"
 
-AllGuideline = for s in shapes where (MatchPattern s.name pattern:"ClumpingGuide_*") collect s
+AllGuideline = for s in shapes where (MatchPattern s.name pattern:"HairGuide_*") collect s
 VertSkinningTable = #()
 
 AllClumpVertGroupArr = #()
 
 AllClumpingCurveControl = #()
+
+Fn RGBToInt col = 
+(
+	local out = (bit.shift col.r 16) + (bit.shift col.g 8) + col.b
+	return out
+)
+
+Fn IntToRGB intVal = 
+(
+	local mask_blue = 255 -- 11111111
+	local mask_green =  65280 -- 11111111 00000000
+	local mask_red = 16711680 -- 11111111 00000000 00000000
+	local col = black
+	col.r = bit.shift (bit.and intVal mask_red) -16
+	col.g = bit.shift (bit.and intVal mask_green) -8
+	col.b = bit.and intVal mask_blue
+
+	return col
+)
+
+testColor = color 255 64 0
+x = RGBToInt testColor
+IntToRGB x 
 
 Fn DeleteUserProp node prop = 
 (

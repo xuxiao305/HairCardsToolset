@@ -8,6 +8,7 @@ sampleRadius = 5
 
 headBone = $BnHead
 
+ChannelName_ClumpingPos = "ClumpingPos"
 ChannelName_CurveParams = "CurveParams"
 ChannelName_InitialPosition = "InitialPos"
 
@@ -228,32 +229,42 @@ Fn OnSplineUpdate ev nd =
 
 	print "OnSplineUpdate"
 
-	bindHairGeoName = execute (getUserProp $ "LinkedHairGeo")
-
-	local guidelineIndex = GetGuidelineIndex $
-	local guidelineCol = IntToRGB guidelineIndex
-
-	if bindHairGeoName != undefined then 
+	for sel in selection do 
 	(
-		for n in bindHairGeoName do 
+		bindHairGeoName = execute (getUserProp sel "LinkedHairGeo")
+
+		local guidelineIndex = GetGuidelineIndex sel
+		local guidelineCol = IntToRGB guidelineIndex
+
+		if bindHairGeoName != undefined then 
 		(
-			local nd = getNodeByName n
-			if isValidNode nd do
+			for n in bindHairGeoName do 
 			(
-				vertArr = (meshOp.getVertsByColor nd.mesh guidelineCol 0 0 0) as array
+				local nd = getNodeByName n
+				if isValidNode nd do
+				(
+					vertArr = (meshOp.getVertsByColor nd.mesh guidelineCol 0 0 0) as array
 
--- 				vertArr = for v in nd.verts collect v.index
-				DeformHairCards nd vertArr
-				SaveGuidelineData $ 1000  
+					DeformHairCardsUsingGuideline sel nd vertArr
+					SaveGuidelineData sel 1000  
 
+				)
 			)
 		)
 	)
+
 )
 
+Fn OnNodeDeleted ev nd = 
+(
+	CleanupInValidGuideline()
+	gc light:true
+)
 
+splineUpdateCallback = undefined
+deleteCallback = undefined
 
-callbackItem = undefined
 gc light:true
 
-callbackItem = NodeEventCallback mouseUp:true geometryChanged:OnSplineUpdate
+splineUpdateCallback = NodeEventCallback mouseUp:true geometryChanged:OnSplineUpdate
+deleteCallback = NodeEventCallback deleted:OnNodeDeleted

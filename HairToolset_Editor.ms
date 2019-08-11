@@ -2,8 +2,23 @@ Fn CheckMesh obj =
 (
 	if classof obj != Editable_Poly then return false
 
+	local meshOK = true
+
+	local channelUsage = #(0,2,3,4)
+	try (
+
+		for i in channelUsage do 
+		(
+			if (meshop.getNumMapVerts obj.mesh i) != obj.mesh.verts.count then 
+				meshOK = false
+		)
+	)
+
+	catch (meshOK = false)
+
+
 	local yesNoCancel
-	if (getNumCPVVerts obj.mesh) != obj.mesh.verts.count then 
+	if not meshOK then 
 	(
 		yesNoCancel = yesNoCancelBox (obj.name + " need to be initilized first, continue?")
 
@@ -16,13 +31,18 @@ Fn CheckMesh obj =
 
 			chanUtil.CreateChannel obj ChannelName_CurveParams
 			
-			if chanUtil.GetChannelIndex obj ChannelName_InitialPosition == false do 
-			(
-				local chanInitPosIndex = chanUtil.CreateChannel obj ChannelName_InitialPosition
+-- 			if chanUtil.GetChannelIndex obj ChannelName_InitialPosition == false do 
+-- 			(
 				channelInfo.CopyChannel obj 1 0
-				channelInfo.PasteChannel obj 3 chanInitPosIndex
-			)
-			
+				local chanInitPosIndex = chanUtil.CreateChannel obj ChannelName_InitialPosition
+				if chanInitPosIndex != false then
+					channelInfo.PasteChannel obj 3 chanInitPosIndex
+
+				local chanClumpingPosIndex = chanUtil.CreateChannel obj ChannelName_ClumpingPos
+				if chanClumpingPosIndex != false then
+					channelInfo.PasteChannel obj 3 chanClumpingPosIndex
+			-- 			)
+
 			macros.run "Modifier Stack" "Convert_to_Poly"
 
 			return true 
@@ -130,7 +150,7 @@ Fn ComputeInitialGradDirection _vertCluster _startSamplePos _selVerts =
 
 
 
-Fn RefreshGuidelineList lbClumpingGroup obj = 
+Fn RefreshGuidelineList lbHairGroup obj = 
 (
 	if obj == undefined then return false
 
@@ -138,7 +158,7 @@ Fn RefreshGuidelineList lbClumpingGroup obj =
 	local guidelines = AllClumpVertGroupArr[2]
 	print guidelines
 
-	lbClumpingGroup.items = for i = 1 to guidelines.count collect (guidelines[i].name) 
+	lbHairGroup.items = for i = 1 to guidelines.count collect (guidelines[i].name) 
 )
 
 
@@ -211,9 +231,10 @@ Fn AddGuideline lbHairGroup =
 
 	clearListener()
 	local selFaces = polyop.getFaceSelection hairGeo
+	if (selFaces as array).count == 0 then return false 
+
 	local selVerts = polyop.getVertsUsingFace hairGeo selFaces
 
-	if selVerts.count == 0 then return false 
 	
 	hairGeo.showVertexColors = on
 
@@ -224,7 +245,7 @@ Fn AddGuideline lbHairGroup =
 	format "btnAddClumping guideline % \n" guideline.name
 	InitializeHairGuideline guideline
 
-	SampleGuildeLine guideline hairGeo selVerts
+	ApplyClumping guideline hairGeo selVerts
 	
 	BindGuideline hairGeo selVerts guideline
 	SaveGuidelineData guideline 1000
@@ -275,7 +296,21 @@ Fn ReSampleGuideline =
 
 	local guideline = GetGuideline hairGeo selVerts
 
-	SampleGuildeLine guideline hairGeo selVerts
+	ApplyClumping guideline hairGeo selVerts
+)
+
+Fn RelaxHairCards = 
+(
+	if hairGeo == undefined then return false 
+	clearListener()
+	selFaces = polyop.getFaceSelection hairGeo
+	selVerts = (polyop.getVertsUsingFace hairGeo selFaces) as array
+
+	if selVerts.count == 0 then return false 
+
+	local guideline = GetGuideline hairGeo selVerts
+
+	RelaxHairCardsUsingGuideline guideline hairGeo selVerts
 )
 
 Fn UpdateVertBindingPosition = 
@@ -291,7 +326,7 @@ Fn UpdateVertBindingPosition =
 	
 	polyop.setVertColor hairGeo 0 selVerts black
 
-	RefreshGuidelineList lbHairGroup hairGeo 
+	RefreshGuidelineList HairEditor.lbHairGroup hairGeo 
 
 	local chanInitPosIndex = chanUtil.GetChannelIndex hairGeo ChannelName_InitialPosition
 
@@ -305,7 +340,8 @@ Fn UpdateVertBindingPosition =
 
 rollout HairEditor "Hair Editor"
 (
-	button btnSetHairObj "Pick Hair Mesh" align:#left width:120 across:3
+	button btnSetHairObj "Pick Hair Mesh" align:#left width:360 
+	button btnRelax "Relax" align:#left width:120 across:3
 	button btnAddClumping "Add Clumping" align:#middle width:120 across:3
 	button btnRemoveGuidelineBinding "Remove Clumping"  align:#right width:120 across:3
 
@@ -339,6 +375,7 @@ rollout HairEditor "Hair Editor"
 
 	on btnSetHairObj pressed do 
 	(
+		gc()
 		hairGeo = SetSelectionAsHairObj()
 
 		local isClumpingMeshValid = CheckMesh hairGeo
@@ -354,7 +391,12 @@ rollout HairEditor "Hair Editor"
 		(
 			messagebox "Invalid hair object"
 		)
+		gc()
 
+	)
+	on btnRelax pressed do 
+	(
+		RelaxHairCards()
 
 	)
 	on btnRefresh pressed do 
@@ -394,7 +436,7 @@ rollout HairEditor "Hair Editor"
 			ccClumpingCurve.curves[1].points[2].value = point2 1 0
 			ccTwistCurve.curves[1].points[1].value = point2 0 0
 			ccTwistCurve.curves[1].points[2].value = point2 0 0
-			
+
 			zoom ccClumpingCurve #all 
 			zoom ccTwistCurve #all 
 		)

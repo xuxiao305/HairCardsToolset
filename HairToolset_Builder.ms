@@ -1,6 +1,24 @@
 ---------------------------------------------------------------
 -------------- Guildeline Managing Functions  -----------------
-Fn SampleGuildeLine guideline obj selVerts = 
+
+Fn SelectNotUsedGuideline = 
+(
+	clearSelection() 
+	CleanupInValidGuideline()
+
+	local notUsedGuideline = #()
+	for guideline in AllGuideline do 
+	(
+		local bindGeos = FindGuidelineBinding guideline
+
+		if bindGeos.count == 0 then append notUsedGuideline guideline
+	)
+
+	select notUsedGuideline 
+)
+
+
+Fn ApplyClumping guideline obj selVerts = 
 (
 	for v in selVerts do 
 	(
@@ -12,14 +30,25 @@ Fn SampleGuildeLine guideline obj selVerts =
 		obj.verts[v].pos = clumpingPos
 
 		local localPos = clumpingPos - obj.pos
-
-		polyop.setMapVert obj 1 v localPos 
+		local chanClumpingPosIndex = chanUtil.GetChannelIndex obj ChannelName_ClumpingPos
+		polyop.setMapVert obj chanClumpingPosIndex v localPos 
 
 		local paramChannelIndex = chanUtil.GetChannelIndex obj ChannelName_CurveParams
 		polyop.setMapVert obj paramChannelIndex v (point3 paramOnCurve 0 0)
 	)
 )
 
+Fn SampleGuildeLine guideline obj selVerts = 
+(
+	for v in selVerts do 
+	(
+		local paramOnCurve = nearestPathParam guideline obj.verts[v].pos
+
+		local paramChannelIndex = chanUtil.GetChannelIndex obj ChannelName_CurveParams
+
+		polyop.setMapVert obj paramChannelIndex v (point3 paramOnCurve 0 0)
+	)
+)
 
 Fn GuideWorldMatrix guideline param = 
 (
@@ -39,6 +68,41 @@ Fn GuideWorldMatrix guideline param =
 )
 
 Fn GuideWorldMatrixFromSparsingData dataArray index = 
+(
+	local guidePos = dataArray[index]
+	local guidePosNext = point3 0 0 0
+	if (index < dataArray.count) then 
+		guidePosNext = dataArray[index + 1]
+	else 
+		guidePosNext = dataArray[index] + (dataArray[index] - dataArray[index-1]) * 0.5
+
+	local tangent = normalize(guidePosNext - guidePos)
+
+	local avgPos = ((dataArray[dataArray.count]) + (dataArray[1])) * 0.5
+	local normal =  normalize(guidePos - (avgPos + point3 1000 0 0))
+	local binormal = normalize(cross tangent normal) 
+	normal = normalize(cross binormal tangent)
+	local mat = Matrix3 tangent binormal normal guidePos
+
+	return mat
+)
+
+
+Fn GuideWorldMatrixGaussian guideline param = 
+(
+	local matArr = #()
+
+	for i = -2 to 2 do 
+	(
+		local p = param + (i as float) * 0.01
+		local mat = GuideWorldMatrix guideline p
+		append matArr mat
+	)
+
+	return matArr
+)
+
+Fn GuideWorldMatrixFromSparsingDataGaussian dataArray index = 
 (
 	local guidePos = dataArray[index]
 	local guidePosNext = point3 0 0 0
@@ -97,6 +161,7 @@ Fn GetGuideline hairGeo vertIndexArr =
 	return guideline
 )
 
+
 Fn BindGuideline hairGeo verts guideline =
 (
 	-- Set guideline index to vertex channel 
@@ -131,6 +196,9 @@ Fn GetAllBindingGroup obj =
 	for guideline in AllGuideline do 
 	(
 		local index = GetGuidelineIndex guideline
+		if index == undefined then 
+			messageBox (guideline.name + " dosn't have index property")
+
 		local col = IntToRGB index
 
 		vertArr = (meshop.getVertsByColor obj.mesh col 0 0 0) as array 
@@ -151,7 +219,7 @@ Fn BuildHairCardMesh guideline =
 	local paramsArr = #()
 
 	local sampleNum = 10
-	local width = 10.0
+	local width = 2.0
 
 	for i = 0 to sampleNum do 
 	(
@@ -182,6 +250,7 @@ Fn BuildHairCardMesh guideline =
 
 	local newHairCard = mesh vertices:vertPosArr faces:faceArr
 	newHairCard.backfacecull = off
+
 	select newHairCard 
 	macros.run "Modifier Stack" "Convert_to_Poly"
 
@@ -341,26 +410,9 @@ Fn FindGuidelineBinding guideline =
 )
 
 
-Fn SelectNotUsedGuideline = 
+Fn DeformHairCardsUsingGuideline guideline hairGeo vertArr = 
 (
-	CleanupInValidGuideline()
-
-	local notUsedGuideline = #()
-	for guideline in AllGuideline do 
-	(
-		local bindGeos = FindGuidelineBinding guideline
-
-		if bindGeos.count == 0 then append notUsedGuideline guideline
-	)
-
-	select notUsedGuideline 
-)
-
-
-
-Fn DeformHairCardsUsingGuideline hairGeo vertArr = 
-(
-	allCurvePos = execute(getUserProp $ "SplineData")
+	allCurvePos = execute(getUserProp guideline "SplineData")
 
 	local paramChannelIndex = chanUtil.GetChannelIndex hairGeo ChannelName_CurveParams
 
@@ -372,13 +424,48 @@ Fn DeformHairCardsUsingGuideline hairGeo vertArr =
 		local prevCurveMat = GuideWorldMatrixFromSparsingData allCurvePos index
 		local invPrevCurveMat = inverse prevCurveMat
 
-		local newWorldMat = GuideWorldMatrix $ param
+		local newWorldMat = GuideWorldMatrix guideline param
 		
 		local newVertPosMat = transMatrix hairGeo.verts[v].pos
 		newVertPosMat = newVertPosMat * invPrevCurveMat * newWorldMat
 
 		hairGeo.verts[v].pos = newVertPosMat.translation
 	)
+)
+
+Fn RelaxHairCardsUsingGuideline guideline hairGeo vertArr = 
+(
+-- 	local gaussianWeightArr = #(0.05, 0.2, 0.5, 0.2, 0.05)
+	local gaussianWeightArr = #(0.2, 0.2, 0.2, 0.2, 0.2)
+	local centerIndex = 3
+
+	allCurvePos = execute(getUserProp guideline "SplineData")
+
+	SampleGuildeLine guideline hairGeo vertArr
+
+	local paramChannelIndex = chanUtil.GetChannelIndex hairGeo ChannelName_CurveParams
+
+	for v = 1 to vertArr.count do 
+	(
+		local param = (polyop.getMapVert hairGeo paramChannelIndex v)[1]
+
+		local guidelineMatArr = GuideWorldMatrixGaussian guideline param
+
+		local vertPosMat = transMatrix hairGeo.verts[v].pos
+		local originalMat = guidelineMatArr[centerIndex]
+		local invOriginalMat = inverse originalMat
+
+		local localVertPosMat = vertPosMat * invOriginalMat 
+
+		local newPos = point3 0 0 0
+		for i = 1 to guidelineMatArr.count do 
+		(
+			newPos += (localVertPosMat * guidelineMatArr[i]).translation * gaussianWeightArr[i]
+
+			hairGeo.verts[v].pos = newPos
+		)
+	)
+	SampleGuildeLine guideline hairGeo vertArr
 )
 
 -------------- Guildeline Managing Functions End --------------
@@ -411,38 +498,5 @@ rollout HairBuilder "Hair Builder"
 			
 	)
 )
-
-
-
--- Fn OnSplineUpdate ev nd = 
--- (
--- 	local cls = ClassOf(GetAnimByHandle nd[1])
--- 	if cls != line and cls != SplineShape do return()
-
--- 	print "OnSplineUpdate"
-
--- 	bindHairGeoName = execute (getUserProp $ "LinkedHairGeo")
-
--- 	if bindHairGeoName != undefined then 
--- 	(
--- 		for n in bindHairGeoName do 
--- 		(
--- 			local nd = getNodeByName n
--- 			if isValidNode nd do
--- 			(
--- 				append bindHairGeo nd
-				
--- 				bindVertsArr = execute (getUserProp $ ("LinkedVertArr_" + n))
-
--- 				vertArr = for v in nd.verts collect v.index
--- 				DeformHairCards nd vertArr
--- 				SaveGuidelineData $ 1000  
-
--- 			)
-				 
--- 		)
--- 	)
--- )
-
 
 

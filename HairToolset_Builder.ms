@@ -30,8 +30,6 @@ Fn ApplyClumping guideline obj selVerts =
 		obj.verts[v].pos = clumpingPos
 
 		local localPos = clumpingPos - obj.pos
-		local chanClumpingPosIndex = chanUtil.GetChannelIndex obj ChannelName_ClumpingPos
-		polyop.setMapVert obj chanClumpingPosIndex v localPos 
 
 		local paramChannelIndex = chanUtil.GetChannelIndex obj ChannelName_CurveParams
 		polyop.setMapVert obj paramChannelIndex v (point3 paramOnCurve 0 0)
@@ -161,6 +159,12 @@ Fn GetGuideline hairGeo vertIndexArr =
 	return guideline
 )
 
+Fn SetGuideline guideline = 
+(
+	crvUtil.InitCurveData guideline
+
+)
+
 
 Fn BindGuideline hairGeo verts guideline =
 (
@@ -171,7 +175,6 @@ Fn BindGuideline hairGeo verts guideline =
 	local col = IntToRGB guidelineIndex
 
 	polyop.setVertColor hairGeo 0 verts col
-
 
 	-- Set mesh vert array to guideline
 	local linkedHairMesh = execute( getUserProp guideline "LinkedHairGeo")
@@ -399,7 +402,6 @@ Fn FindGuidelineBinding guideline =
 	local guidelineIndex = GetGuidelineIndex guideline
 	local guidelineCol = IntToRGB guidelineIndex
 
-	local propName = trimRight ("CurveInfo_" + guideline.name) 
 	for geo in geometry do 
 	(
 		local vertArr = (meshOp.getVertsByColor geo.mesh guidelineCol 0 0 0) as array
@@ -468,7 +470,194 @@ Fn RelaxHairCardsUsingGuideline guideline hairGeo vertArr =
 	SampleGuildeLine guideline hairGeo vertArr
 )
 
+Fn SpawnTemplateMesh targetGuideline templateMesh = 
+(
+	local vertArr = #()
+
+	for vert in templateMesh.verts do 
+	(
+		local chanIndex = chanUtil.GetChannelIndex templateMesh ChannelName_CurveParams
+		local param = meshop.getMapVert templateMesh.mesh chanIndex vert.index
+
+		-- use the vertex position create the local matrix related to point.x value
+		local localVertMat = TransMatrix (point3 0 vert.pos.y vert.pos.z) 
+
+		local newGuidelineMat = GuideWorldMatrix targetGuideline param.x
+
+		local newWorldMat = localVertMat * newGuidelineMat
+
+		append vertArr newWorldMat.translation
+	)
+	spawnedMesh = CompleteCloneObj templateMesh
+	
+	spawnedMesh.name = "newMesh"
+
+	for v = 1 to spawnedMesh.verts.count do 
+	(
+		spawnedMesh.verts[v].pos = vertArr[v]
+	)
+
+	local vertArr = for v = 1 to spawnedMesh.verts.count collect v
+	BindGuideline spawnedMesh vertArr targetGuideline
+)
+
+Fn TransferMeshToAnotherGuideline targetGuideline templateMesh = 
+(
+	local vertArr = #()
+	local guideline = GetGuideline templateMesh #(1)
+
+	for vert in templateMesh.verts do 
+	(
+		local param = nearestPathParam guideline vert.pos
+		local oldGuidelineMat = GuideWorldMatrix guideline param
+		local invOldGuidelineMat = inverse oldGuidelineMat
+
+		local newGuidelineMat = GuideWorldMatrix targetGuideline param
+
+		local localVertMat = (TransMatrix vert.pos) * invOldGuidelineMat
+		local newWorldMat = localVertMat * newGuidelineMat
+
+		append vertArr newWorldMat.translation
+	)
+	local spawnedMesh = undefined
+	local lst = undefined
+	maxops.clonenodes templateMesh actualNodeList:&lst newNodes:&spawnedMesh
+	spawnedMesh = spawnedMesh[1]
+
+	spawnedMesh.name = "newMesh"
+
+
+	for v = 1 to spawnedMesh.verts.count do 
+	(
+		spawnedMesh.verts[v].pos = vertArr[v]
+	)
+)
+
+
 -------------- Guildeline Managing Functions End --------------
+---------------------------------------------------------------
+
+
+-------------- Template Mesh Functions  -----------------------
+---------------------------------------------------------------
+Fn SetTemplateMesh geo = 
+(
+	clearListener()
+	select geo
+	chanUtil.CleanChannels geo
+	macros.run "Modifier Stack" "Convert_to_Poly"
+	local bb = nodeGetBoundingBox geo geo.transform
+	bbLengthX = abs(bb[1][1]) + abs(bb[2][1])
+	bbLengthY = abs(bb[1][2]) + abs(bb[2][2])
+	bbLengthZ = abs(bb[1][3]) + abs(bb[2][3])
+
+	local bbLengthMain = bbLengthX
+	local bbLengthSecondary = bbLengthY
+	local bbLengthTetiry = bbLengthZ
+
+
+
+/* 	local bbAxisMain = 1
+	if bbLengthMain < bbLengthY then 
+	(
+		bbLengthMain = bbLengthY
+		bbAxisMain = 2
+	)
+	if bbLengthMain < bbLengthZ then 
+	(
+		bbLengthMain = bbLengthZ
+		bbAxisMain = 3
+	)
+ */
+	
+
+	chanIndex = chanUtil.CreateChannel geo ChannelName_InitialPosition
+	channelInfo.CopyChannel geo 1 0
+	channelInfo.PasteChannel geo 3 chanIndex
+
+ 	chanUtil.CreateChannel geo ChannelName_CurveParams
+
+ 	macros.run "Modifier Stack" "Convert_to_Poly"
+ 	local paramChannelIndex = chanUtil.GetChannelIndex geo ChannelName_CurveParams
+	for v = 1 to geo.verts.count do 
+	(
+		if bbLengthMain < 0.001 then sampleX = 0
+		else sampleX = (geo.verts[v].pos[1] - bb[1][1]) / bbLengthMain
+
+		if bbLengthSecondary < 0.001 then sampleY = 0
+		else sampleY = (geo.verts[v].pos[2] - bb[1][2]) / bbLengthSecondary
+
+		if bbLengthTetiry < 0.001 then sampleZ = 0
+		else sampleZ = (geo.verts[v].pos[3] - bb[1][3]) / bbLengthTetiry
+
+
+		print (geo.verts[v].pos[3])
+		print bb[1][3]
+		print bbLengthTetiry
+
+		
+		polyop.setMapVert geo paramChannelIndex v (point3 sampleX sampleY sampleZ) 
+	)
+)
+-------------- Template Mesh Functions End---------------------
+---------------------------------------------------------------
+
+
+-------------- Deform Resolving Functions  --------------------
+---------------------------------------------------------------
+Fn ResolveFinalPosition hairGeo ccClumpingCurve ccTwistCurve = 
+(
+	if not (isValidObj hairGeo) do return false
+
+	local selFaces = polyop.getFaceSelection hairGeo
+	local selVerts = (polyop.getVertsUsingFace hairGeo selFaces) as array
+	if selVerts.count == 0 do return false
+
+	local guideline = GetGuideline hairGeo selVerts
+	if guideline == undefined do return false 
+	
+	local chanCurveParamIndex = chanUtil.GetChannelIndex hairGeo ChannelName_CurveParams
+	local chanInitPosIndex = chanUtil.GetChannelIndex hairGeo ChannelName_InitialPosition
+
+
+	for v in selVerts do 
+	(
+-- 		format "v %\n" v
+
+		local param = (polyop.getMapVert hairGeo chanCurveParamIndex v)[1]
+-- 		format "param %\n" param
+
+		local guideWorldMat = GuideWorldMatrix guideline param
+-- 		format "guideWorldMat %\n" guideWorldMat
+
+		-- twist
+		local twistPercent = (getValue ccTwistCurve.curves[1] 0f param)
+		local originalLocalPos = polyop.getMapVert hairGeo chanInitPosIndex v
+		-- !! IMPORTANT -- shift X to 0 to get local position!
+		originalLocalPos.x = 0
+
+		local originalPosMat = transMatrix ( originalLocalPos ) 
+
+
+		local sinT = sin(twistPercent * 180.0)
+		local cosT = cos(twistPercent * 180.0)
+		local twistMat = Matrix3 (point3 1 0 0) (point3 0 cosT sinT) (point3 0 -sinT cosT) (point3 0 0 0)
+
+		local newWorldVertPos = (originalPosMat *  twistMat * guideWorldMat).translation
+
+		-- clumping 
+		local clumpPercent = 1.0 - (getValue ccClumpingCurve.curves[1] 0f param)
+		local clumpOffset = guideWorldMat.translation - newWorldVertPos
+
+		hairGeo.verts[v].pos = newWorldVertPos + clumpPercent * clumpOffset 
+
+	)
+
+	crvUtil.SaveCurveData guideline ccClumpingCurve
+	crvUtil.SaveCurveData guideline ccTwistCurve
+)
+
+-------------- Deform Resolving Functions End------------------
 ---------------------------------------------------------------
 
 
@@ -477,6 +666,11 @@ rollout HairBuilder "Hair Builder"
 	button btnSplineFromLine "Use Line Tool" align:#left width:120 across:3
 
 	button btnNewHairCards "New Hair Card" align:#left width:120 across:3
+
+	button btnSpawnTemplate "Spawn Template" align:#left width:120 across:3
+
+	button btnSetTemplate "Set Template" align:#left width:120  across:3
+	button btnSetGuideline "Set Guideline" align:#left width:120 across:3
 
 	on btnSplineFromLine pressed do 
 	(
@@ -496,6 +690,44 @@ rollout HairBuilder "Hair Builder"
 			)
 		)
 			
+	)
+
+	on btnSetTemplate pressed do 
+	(
+		if (selection.count == 1 and classof selection[1] == Editable_Poly) do 
+			SetTemplateMesh selection[1] 
+	)
+
+	on btnSetGuideline pressed do 
+	(
+		if (selection.count == 1 and superclassof selection[1] == shape) do 
+			SetGuideline selection[1]
+	)
+
+	on btnSpawnTemplate pressed do 
+	(
+		local templateMesh 
+		local guideline
+
+		if selection.count == 2 then 
+		(
+			for sel in selection do 
+			(
+				if classof sel == Editable_Poly then 
+				(
+					templateMesh = sel
+				)
+				else if superclassof sel ==  shape then 
+				(
+					guideline = sel
+				)
+			)
+		)
+
+		print templateMesh
+		print guideline
+		if templateMesh != undefined and guideline != undefined do 
+			SpawnTemplateMesh guideline templateMesh
 	)
 )
 

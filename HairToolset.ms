@@ -4,11 +4,10 @@ sampleHeightMax = 185
 sampleHeightMin = 137
 boneNumPerSpline = 3
 
-sampleRadius = 5
+sampleRadius = 7
 
 headBone = $BnHead
 
-ChannelName_ClumpingPos = "ClumpingPos"
 ChannelName_CurveParams = "CurveParams"
 ChannelName_InitialPosition = "InitialPos"
 
@@ -38,6 +37,8 @@ Fn IntToRGB intVal =
 	return col
 )
 
+
+
 Fn DeleteUserPropByPattern node propPattern = 
 (
 	local buff = (getUserPropBuffer node) as StringStream
@@ -52,6 +53,7 @@ Fn DeleteUserPropByPattern node propPattern =
  	)
  	setUserPropBuffer node (replace_LF_with_CRLF (newb as string))
 )
+
 Fn DeleteUserProp node prop = 
 (
 	if getUserProp node prop == undefined do return()
@@ -87,6 +89,19 @@ Fn SetArrayProperty nd propName arrValue =
 
 struct ChannelUtility
 (
+	Fn CleanChannels obj keepUV1:true keepVC:true = 
+	(
+		local mapNum = polyOp.getNumMaps obj 
+
+		for i = mapNum to 0 by -1 do 
+		(
+			if i == 0 and keepVC then continue
+			if i == 1 and keepUV1 then continue
+			channelInfo.ClearChannel obj i	
+		)
+		channelInfo.Update ()
+-- 		setUserPropBuffer obj ""
+	),
 	Fn GetChannelIndex obj channelName = 
 	(
 		local mapNum = polyOp.getNumMaps obj 
@@ -117,63 +132,84 @@ struct ChannelUtility
 
 chanUtil = ChannelUtility()
 
+
+Fn CompleteCloneObj obj = 
+(
+	local newObj
+	maxops.clonenodes obj actualNodeList:&lst newNodes:&newObj
+	newObj = newObj[1]
+	select newObj 
+
+	local mapNum = polyOp.getNumMaps obj 
+
+	for i = 0 to (mapNum - 1) do 
+	(
+		channelInfo.CopyChannel obj 3 i
+		channelInfo.PasteChannel newObj 3 i
+	)
+
+	macros.run "Modifier Stack" "Convert_to_Poly"
+
+	return newObj
+)
+
+
 struct CurveUtility 
 (
-	Fn GetCurveInfo allCurvesControl = 
+	Fn GetCurveData crvControl = 
 	(
-		local allCurveInfo = #()
-		for c = 1 to allCurvesControl.count do 
+		local curCurveData = #()
+
+		local nameStr = crvControl.name
+		local curve = crvControl.curves[1]
+		local valueArr = #()
+		local inTangentArr = #()
+		local outTangentArr = #()
+		local bezierArr = #()
+		local cornerArr = #()
+
+		for i = 1 to curve.points.count do 
 		(
-			local curCurveInfo = #()
-			local nameStr = allCurvesControl[c].name
-			local curve = allCurvesControl[c].curves[1]
-			local valueArr = #()
-			local inTangentArr = #()
-			local outTangentArr = #()
-			local bezierArr = #()
-			local cornerArr = #()
-
-			for i = 1 to curve.points.count do 
-			(
-				append valueArr curve.points[i].value
-				append inTangentArr curve.points[i].inTangent
-				append outTangentArr curve.points[i].outTangent
-				append bezierArr curve.points[i].bezier
-				append cornerArr curve.points[i].corner
-			)
-			curCurveInfo = #(nameStr, valueArr, inTangentArr, outTangentArr, bezierArr, cornerArr)
-
-			append allCurveInfo curCurveInfo
+			append valueArr curve.points[i].value
+			append inTangentArr curve.points[i].inTangent
+			append outTangentArr curve.points[i].outTangent
+			append bezierArr curve.points[i].bezier
+			append cornerArr curve.points[i].corner
 		)
-		
-		return allCurveInfo
+		curCurveData = #(valueArr, inTangentArr, outTangentArr, bezierArr, cornerArr)
+
+		return curCurveData
 	),
 
 
-	Fn SaveCurveInfo obj curveInfoArr guideline = 
+	Fn SaveCurveData  guideline crvControl = 
 	(
-		setUserProp obj ("CurveInfo_" + guideline.name) curveInfoArr
+		local curveData = GetCurveData crvControl
+		setUserProp guideline crvControl.name curveData
 	),
 
-
-	Fn LoadCurveInfo obj guideline = 
+	Fn InitCurveData guideline = 
 	(
-		local curveInfo = getUserProp obj ("CurveInfo_" + guideline.name)
-		print curveInfo
-		
-		return curveInfo
+		setUserProp guideline "ccClumpingCurve" "#(#([0,1], [1,0]), #([0,0], [0,0]), #([0,0], [0,0]), #(false, false), #(true, false))"
+		setUserProp guideline "ccTwistCurve" "#(#([0,0], [1,0]), #([0,0], [0,0]), #([0,0], [0,0]), #(false, false), #(true, false))"
+
 	),
 
-	Fn SetCurveinfo curveInfo curve = 
+	Fn LoadCurveData guideline = 
 	(
-		local nameStr = curveInfo[1]
-		local valArr = curveInfo[2]
-		local inTangentArr = curveInfo[3]
-		local outTangentArr = curveInfo[4]
-		local bezierArr = curveInfo[5]
-		local cornerArr = curveInfo[6]
+		local clumpingCurve = execute(getUserProp guideline ("ccClumpingCurve"))
+		local twistCurve = execute(getUserProp guideline ("ccTwistCurve"))
 
--- 		break()
+		return #(clumpingCurve, twistCurve)
+	),
+
+	Fn SetcurveData curveData curve = 
+	(
+		local valArr = curveData[1]
+		local inTangentArr = curveData[2]
+		local outTangentArr = curveData[3]
+		local bezierArr = curveData[4]
+		local cornerArr = curveData[5]
 
 		for p = curve.points.count to 1 by -1 do 
 		(
@@ -192,9 +228,9 @@ struct CurveUtility
 		)
 	),
 
-	Fn RemoveCurveInfo obj guideline = 
+	Fn RemoveCurveData obj guideline = 
 	(
-		DeleteUserProp obj ("CurveInfo_" + guideline.name)
+		DeleteUserProp obj ("CurveData_" + guideline.name)
 	)
 )
 

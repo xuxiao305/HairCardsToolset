@@ -1,10 +1,12 @@
+SettingData = false
+
 Fn CheckMesh obj = 
 (
 	if classof obj != Editable_Poly then return false
 
 	local meshOK = true
 
-	local channelUsage = #(0,2,3,4)
+	local channelUsage = #(0,2,3)
 	try (
 
 		for i in channelUsage do 
@@ -31,17 +33,12 @@ Fn CheckMesh obj =
 
 			chanUtil.CreateChannel obj ChannelName_CurveParams
 			
--- 			if chanUtil.GetChannelIndex obj ChannelName_InitialPosition == false do 
--- 			(
-				channelInfo.CopyChannel obj 1 0
-				local chanInitPosIndex = chanUtil.CreateChannel obj ChannelName_InitialPosition
-				if chanInitPosIndex != false then
-					channelInfo.PasteChannel obj 3 chanInitPosIndex
 
-				local chanClumpingPosIndex = chanUtil.CreateChannel obj ChannelName_ClumpingPos
-				if chanClumpingPosIndex != false then
-					channelInfo.PasteChannel obj 3 chanClumpingPosIndex
-			-- 			)
+			channelInfo.CopyChannel obj 1 0
+			local chanInitPosIndex = chanUtil.CreateChannel obj ChannelName_InitialPosition
+			if chanInitPosIndex != false then
+				channelInfo.PasteChannel obj 3 chanInitPosIndex
+
 
 			macros.run "Modifier Stack" "Convert_to_Poly"
 
@@ -165,57 +162,6 @@ Fn RefreshGuidelineList lbHairGroup obj =
 
 
 
-Fn ResolveFinalPosition hairGeo ccClumpingCurve ccTwistCurve = 
-(
-	if not (isValidObj hairGeo) do return false
-
-	local selFaces = polyop.getFaceSelection hairGeo
-	local selVerts = (polyop.getVertsUsingFace hairGeo selFaces) as array
-	if selVerts.count == 0 do return false
-
-	local guideline = GetGuideline hairGeo selVerts
-	if guideline == undefined do return false 
-	
-	local chanCurveParamIndex = chanUtil.GetChannelIndex hairGeo ChannelName_CurveParams
-	local chanInitPosIndex = chanUtil.GetChannelIndex hairGeo ChannelName_InitialPosition
-
-
-	for v in selVerts do 
-	(
-		local param = (polyop.getMapVert hairGeo chanCurveParamIndex v)[1]
-
-		local guideWorldMat = GuideWorldMatrix guideline param
-
-		-- twist
-		local twistPercent = (getValue ccTwistCurve.curves[1] 0f param)
-
-		local invGuideWorldMat = inverse guideWorldMat
-
-		local originalPos = polyop.getMapVert hairGeo chanInitPosIndex v 
-
-		local localVertMat = transMatrix (originalPos + hairGeo.pos) 
-
-		localVertMat = localVertMat * invGuideWorldMat
-		
-		local sinT = sin(twistPercent * 180.0)
-		local cosT = cos(twistPercent * 180.0)
-		local twistMat = Matrix3 (point3 1 0 0) (point3 0 cosT sinT) (point3 0 -sinT cosT) (point3 0 0 0)
-
-		local twistWorldMat = localVertMat * twistMat * guideWorldMat
-
-		-- clumping 
-		local clumpPercent = 1.0 - (getValue ccClumpingCurve.curves[1] 0f param)
-		local clumpPos = guideWorldMat.translation
-		local twistPos = twistWorldMat.translation
-
-		hairGeo.verts[v].pos = twistPos * (1 - clumpPercent) + clumpPos * clumpPercent
-
-	)
-
-
-	local allCurveInfo = crvUtil.GetCurveInfo AllClumpingCurveControl
-	crvUtil.SaveCurveInfo hairGeo allCurveInfo guideline
-)
 
 Fn SetSelectionAsHairObj = 
 (
@@ -254,10 +200,11 @@ Fn AddGuideline lbHairGroup =
 	lbHairGroup.selection = lbHairGroup.items.count
 
 	-- Save the curve infomation 
-	local allCurveInfo = crvUtil.GetCurveInfo AllClumpingCurveControl
-
-	crvUtil.SaveCurveInfo hairGeo allCurveInfo guideline
-
+	for c = 1 to AllClumpingCurveControl.count do 
+	(
+		crvUtil.SaveCurveData guideline AllClumpingCurveControl[c] 
+	)
+	
 	return true
 		
 )
@@ -411,18 +358,20 @@ rollout HairEditor "Hair Editor"
 		local verts = AllClumpVertGroupArr[1][(lbHairGroup.selection as integer)]
 		polyop.setFaceSelection hairGeo (polyop.getFacesUsingVert hairGeo verts)
 		
-		selFaces = polyop.getFaceSelection hairGeo
-		selVerts = (polyop.getVertsUsingFace hairGeo selFaces as array)
+		local guideline = GetGuideline hairGeo verts
+		local curveDataArr = crvUtil.LoadcurveData guideline
 
-		local guideline = GetGuideline hairGeo selVerts
-		local curveInfo = execute (crvUtil.LoadCurveInfo hairGeo guideline)
-
+		SettingData = true
 		for i = 1 to AllClumpingCurveControl.count do
 		(
-			crvUtil.SetCurveinfo curveInfo[i] AllClumpingCurveControl[i].curves[1] 
+			crvUtil.SetCurveData curveDataArr[i] AllClumpingCurveControl[i].curves[1] 
 		)
+
+		SettingData = false
 		
-		print curveInfo
+		zoom ccClumpingCurve #all 
+		zoom ccTwistCurve #all 
+
 		ForceCompleteRedraw()
 	)
 
@@ -464,27 +413,36 @@ rollout HairEditor "Hair Editor"
 
 	on ccClumpingCurve ptChanged ci val do
 	(
-		clearListener()
-		ResolveFinalPosition hairGeo ccClumpingCurve ccTwistCurve
-
+		if not SettingData then
+		(
+			ResolveFinalPosition hairGeo ccClumpingCurve ccTwistCurve
+			zoom ccClumpingCurve #all 
+		)
 	) 
 
 	on ccClumpingCurve tangentChanged ci val type do 
 	(
-		clearListener()
-		ResolveFinalPosition hairGeo ccClumpingCurve ccTwistCurve
+		if not SettingData then
+		(
+			ResolveFinalPosition hairGeo ccClumpingCurve ccTwistCurve
+		)
 	)
 
 	on ccTwistCurve ptChanged ci val do
 	(
-		clearListener()
-		ResolveFinalPosition hairGeo ccClumpingCurve ccTwistCurve
-	) 
+		if not SettingData then
+		(
+			ResolveFinalPosition hairGeo ccClumpingCurve ccTwistCurve
+			zoom ccTwistCurve #all 
+		) 
+	)
 
 	on ccTwistCurve tangentChanged ci val type do 
 	(
-		clearListener()
-		ResolveFinalPosition hairGeo ccClumpingCurve ccTwistCurve
+		if not SettingData then
+		(
+			ResolveFinalPosition hairGeo ccClumpingCurve ccTwistCurve
+		)
 	)
 )
 

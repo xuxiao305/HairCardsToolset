@@ -1,5 +1,6 @@
 hairGeo = undefined
 
+mode = #Spline
 sampleHeightMax = 185
 sampleHeightMin = 137
 boneNumPerSpline = 3
@@ -10,6 +11,9 @@ headBone = $BnHead
 
 ChannelName_CurveParams = "CurveParams"
 ChannelName_InitialPosition = "InitialPos"
+ChannelName_ManualPosition = "ManualOffset"
+ChannelName_ClumpOffset = "ClumpOffset"
+
 
 AllGuideline = for s in shapes where (MatchPattern s.name pattern:"HairGuide_*") collect s
 VertSkinningTable = #()
@@ -288,7 +292,7 @@ Fn OnSplineUpdate ev nd =
 			)
 		)
 	)
-
+	CompleteRedraw()
 )
 
 Fn OnNodeDeleted ev nd = 

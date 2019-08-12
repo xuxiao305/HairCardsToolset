@@ -267,7 +267,7 @@ Fn UpdateVertBindingPosition =
 	clearListener()
 
 	local selFaces = polyop.getFaceSelection hairGeo
-	local selVerts = polyop.getVertsUsingFace hairGeo selFaces 
+	local selVerts = (polyop.getVertsUsingFace hairGeo selFaces) as array 
 
 	if selVerts.count == 0 then return false 
 	
@@ -277,13 +277,98 @@ Fn UpdateVertBindingPosition =
 
 	local chanInitPosIndex = chanUtil.GetChannelIndex hairGeo ChannelName_InitialPosition
 
-	for v in (selVerts as array) do 
+	for v in selVerts do 
 	(
 		local localPos = hairGeo.verts[v].pos - hairGeo.pos
 		polyop.setMapVert hairGeo chanInitPosIndex v localPos
 	)
 )
 
+
+Fn SwitchToManualMode = 
+(
+	freeze AllGuideline  
+	unfreeze geometry
+	mode = #Manual
+
+-- 	local chanClumpOffsetIndex = chanUtil.GetChannelIndex hairGeo ChannelName_ClumpOffset
+-- 	for vert in hairGeo.verts do 
+-- 	(
+-- 		polyop.setMapVert hairGeo chanClumpOffsetIndex vert.index vert.pos
+-- 		print vert
+-- 	)
+)
+
+Fn SwitchToSplineMode ccClumpingCurve ccTwistCurve = 
+(
+
+	mode = #Spline
+
+	if hairGeo == undefined then return false 
+	unfreeze AllGuideline  
+	freeze geometry
+
+	clearListener()
+
+	local selFaces = polyop.getFaceSelection hairGeo
+	local selVerts = (polyop.getVertsUsingFace hairGeo selFaces) as array
+
+	if selVerts.count == 0 then return false 
+
+	local guideline = GetGuideline hairGeo selVerts
+	if guideline == undefined do return false 
+
+	local chanCurveParamIndex = chanUtil.GetChannelIndex hairGeo ChannelName_CurveParams
+	local chanInitPosIndex = chanUtil.GetChannelIndex hairGeo ChannelName_InitialPosition
+	local chanManualIndex = chanUtil.GetChannelIndex hairGeo ChannelName_ManualPosition
+	local chanClumpOffsetIndex = chanUtil.GetChannelIndex hairGeo ChannelName_ClumpOffset
+
+	for v in selVerts do 
+	(
+		format "\-----\nv %\n" v
+
+		-- Inverse Guideline Transform
+		local param = (polyop.getMapVert hairGeo chanCurveParamIndex v)[1]
+		format "param %\n" param
+		
+		local originalLocalPos = polyop.getMapVert hairGeo chanInitPosIndex v
+		format "originalLocalPos %\n" originalLocalPos
+
+		local worldGuideMat = GuideWorldMatrix guideline param
+		format "worldGuideMat %\n" worldGuideMat
+
+		local vMat = TransMatrix (hairGeo.verts[v].pos)
+		format "vMat %\n" vMat
+
+		-- Inverse Clumping 
+		local clumpOffset = polyop.getMapVert hairGeo chanClumpOffsetIndex v 
+-- 		local clumpOffset = GetClumpingOffset ccClumpingCurve param worldGuideMat preManualSnapshot
+		format "clumpOffset %\n" clumpOffset
+
+		vMat.translation = vMat.translation - clumpOffset
+		format "Inverse Clumping  vMat %\n" vMat
+
+		-- Inverse Guideline WorldTranslation First!!
+-- 		vMat.translation = vMat.translation + worldGuideMat.translation
+-- 		format "Inverse Guideline WorldTranslation vMat %\n" vMat
+
+		-- Inverse Guideline Transform
+		vMat = vMat * (Inverse worldGuideMat)
+		format "Inverse Guideline Transform vMat %\n" vMat
+		 
+		-- Inverse Twist
+		local twistMat = GetTwistMat ccTwistCurve param
+		vMat = vMat * (inverse twistMat)
+		format "vMat.translation %\n" vMat.translation
+
+		-- Inverse Initial Local Position
+		vMat.translation = vMat.translation - (point3 0 originalLocalPos.y originalLocalPos.z)
+		format "2 vMat.translation %\n" vMat.translation
+
+		polyop.setMapVert hairGeo chanManualIndex v vMat.translation
+	)
+
+)
 
 rollout HairEditor "Hair Editor"
 (
@@ -297,7 +382,9 @@ rollout HairEditor "Hair Editor"
 	button btnUpdateInitialPos "Update Initial Pos" align:#right width:120 across:3 
 	button btnSelectUnusedGuideline "Select Unused" align:#right width:120 
 
-
+	button btnManualMode "Manual Mode" align:#left across:2 width:150 
+	button btnSplineMode "Spline Mode" align:#right across:2 width:150
+	
 	listbox lbHairGroup "Hair Group" align:#left width:130 height:30
 
 	CurveControl ccClumpingCurve "Clumping Curve:"	height:200 width:350 align:#left numCurves:1 visible:true
@@ -318,6 +405,19 @@ rollout HairEditor "Hair Editor"
 		zoom ccTwistCurve #all
 
 		AllClumpingCurveControl = #(ccClumpingCurve, ccTwistCurve)
+	)
+
+	on btnManualMode pressed do 
+	(
+		if mode == #Spline then 
+			SwitchToManualMode ()
+		
+	)
+
+	on btnSplineMode pressed do 
+	(
+		if mode == #Manual then 
+			SwitchToSplineMode ccClumpingCurve ccTwistCurve
 	)
 
 	on btnSetHairObj pressed do 
@@ -416,7 +516,6 @@ rollout HairEditor "Hair Editor"
 		if not SettingData then
 		(
 			ResolveFinalPosition hairGeo ccClumpingCurve ccTwistCurve
-			zoom ccClumpingCurve #all 
 		)
 	) 
 
@@ -433,7 +532,6 @@ rollout HairEditor "Hair Editor"
 		if not SettingData then
 		(
 			ResolveFinalPosition hairGeo ccClumpingCurve ccTwistCurve
-			zoom ccTwistCurve #all 
 		) 
 	)
 

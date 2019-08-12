@@ -577,8 +577,14 @@ Fn SetTemplateMesh geo =
 
  	chanUtil.CreateChannel geo ChannelName_CurveParams
 
+ 	chanUtil.CreateChannel geo ChannelName_ManualPosition
+ 	chanUtil.CreateChannel geo ChannelName_ClumpOffset
+
  	macros.run "Modifier Stack" "Convert_to_Poly"
  	local paramChannelIndex = chanUtil.GetChannelIndex geo ChannelName_CurveParams
+ 	local manualChannelIndex = chanUtil.GetChannelIndex geo ChannelName_ManualPosition
+ 	local preManualChannelIndex = chanUtil.GetChannelIndex geo ChannelName_ClumpOffset
+
 	for v = 1 to geo.verts.count do 
 	(
 		if bbLengthMain < 0.001 then sampleX = 0
@@ -589,14 +595,11 @@ Fn SetTemplateMesh geo =
 
 		if bbLengthTetiry < 0.001 then sampleZ = 0
 		else sampleZ = (geo.verts[v].pos[3] - bb[1][3]) / bbLengthTetiry
-
-
-		print (geo.verts[v].pos[3])
-		print bb[1][3]
-		print bbLengthTetiry
-
 		
 		polyop.setMapVert geo paramChannelIndex v (point3 sampleX sampleY sampleZ) 
+		polyop.setMapVert geo manualChannelIndex v (point3 0 0 0) 
+		polyop.setMapVert geo preManualChannelIndex v (point3 0 0 0) 
+		
 	)
 )
 -------------- Template Mesh Functions End---------------------
@@ -605,6 +608,26 @@ Fn SetTemplateMesh geo =
 
 -------------- Deform Resolving Functions  --------------------
 ---------------------------------------------------------------
+
+Fn GetTwistMat ccTwistCurve param = 
+(
+	local twistPercent = (getValue ccTwistCurve.curves[1] 0f param)
+	local sinT = sin(twistPercent * 180.0)
+	local cosT = cos(twistPercent * 180.0)
+	local twistMat = Matrix3 (point3 1 0 0) (point3 0 cosT sinT) (point3 0 -sinT cosT) (point3 0 0 0)		
+
+	return twistMat
+)
+
+Fn GetClumpingOffset ccClumpingCurve param guideWorldMat preClumpingPos = 
+(
+	local clumpPercent = 1.0 - (getValue ccClumpingCurve.curves[1] 0f param)
+	local clumpOffset = (guideWorldMat.translation - preClumpingPos) * clumpPercent
+
+	return clumpOffset 
+)
+
+
 Fn ResolveFinalPosition hairGeo ccClumpingCurve ccTwistCurve = 
 (
 	if not (isValidObj hairGeo) do return false
@@ -616,8 +639,69 @@ Fn ResolveFinalPosition hairGeo ccClumpingCurve ccTwistCurve =
 	local guideline = GetGuideline hairGeo selVerts
 	if guideline == undefined do return false 
 	
-	local chanCurveParamIndex = chanUtil.GetChannelIndex hairGeo ChannelName_CurveParams
-	local chanInitPosIndex = chanUtil.GetChannelIndex hairGeo ChannelName_InitialPosition
+	chanInitPosIndex = chanUtil.GetChannelIndex hairGeo ChannelName_InitialPosition
+	chanCurveParamIndex = chanUtil.GetChannelIndex hairGeo ChannelName_CurveParams
+	chanManualIndex = chanUtil.GetChannelIndex hairGeo ChannelName_ManualPosition
+	chanClumpOffsetIndex = chanUtil.GetChannelIndex hairGeo ChannelName_ClumpOffset
+
+	for v in selVerts do 
+	(
+-- 		print v
+		local param = (polyop.getMapVert hairGeo chanCurveParamIndex v)[1]
+		local guideWorldMat = GuideWorldMatrix guideline param
+		
+		-- Twist
+		local twistPercent = (getValue ccTwistCurve.curves[1] 0f param)
+		local originalLocalPos = polyop.getMapVert hairGeo chanInitPosIndex v
+		
+		-- !! IMPORTANT -- shift X to 0 to get local position!
+		originalLocalPos.x = 0
+		local originalPosMat = transMatrix ( originalLocalPos ) 
+
+		local twistMat = GetTwistMat ccTwistCurve param
+
+		local newWorldVertPos = (originalPosMat * twistMat * guideWorldMat).translation
+-- 		format "newWorldVertPos -- %\n" newWorldVertPos
+
+		-- Manual offset
+		local manualOffset = transMatrix(polyop.getMapVert hairGeo chanManualIndex v)
+-- 		format "manualOffset -- %\n" manualOffset
+		
+		local worldManualOffset = (manualOffset * twistMat * guideWorldMat).translation 
+-- 		format "twistMat -- %\n" twistMat
+-- 		format "guideWorldMat -- %\n" guideWorldMat
+-- 		format "worldManualOffset -- %\n" worldManualOffset
+
+		-- Clumping
+		local clumpOffset = GetClumpingOffset ccClumpingCurve param guideWorldMat newWorldVertPos 
+		polyop.setMapVert hairGeo chanClumpOffsetIndex v clumpOffset
+-- 		format "clumpOffset -- %\n" clumpOffset
+
+
+		hairGeo.verts[v].pos = newWorldVertPos + clumpOffset + (worldManualOffset - guideWorldMat.translation)
+
+	)
+	CompleteRedraw()
+
+	crvUtil.SaveCurveData guideline ccClumpingCurve
+	crvUtil.SaveCurveData guideline ccTwistCurve
+
+
+)
+Fn ResolveFinalPosition2 hairGeo ccClumpingCurve ccTwistCurve = 
+(
+	if not (isValidObj hairGeo) do return false
+
+	local selFaces = polyop.getFaceSelection hairGeo
+	local selVerts = (polyop.getVertsUsingFace hairGeo selFaces) as array
+	if selVerts.count == 0 do return false
+
+	local guideline = GetGuideline hairGeo selVerts
+	if guideline == undefined do return false 
+	
+	chanInitPosIndex = chanUtil.GetChannelIndex hairGeo ChannelName_InitialPosition
+	chanCurveParamIndex = chanUtil.GetChannelIndex hairGeo ChannelName_CurveParams
+	chanManualIndex = chanUtil.GetChannelIndex hairGeo ChannelName_ManualPosition
 
 
 	for v in selVerts do 
@@ -636,25 +720,26 @@ Fn ResolveFinalPosition hairGeo ccClumpingCurve ccTwistCurve =
 		-- !! IMPORTANT -- shift X to 0 to get local position!
 		originalLocalPos.x = 0
 
+		-- Add manual offset
+		local manualOffset = polyop.getMapVert hairGeo chanManualIndex v
+		originalLocalPos = originalLocalPos + manualOffset
+
 		local originalPosMat = transMatrix ( originalLocalPos ) 
 
-
-		local sinT = sin(twistPercent * 180.0)
-		local cosT = cos(twistPercent * 180.0)
-		local twistMat = Matrix3 (point3 1 0 0) (point3 0 cosT sinT) (point3 0 -sinT cosT) (point3 0 0 0)
+		local twistMat = GetTwistMat ccTwistCurve param
 
 		local newWorldVertPos = (originalPosMat *  twistMat * guideWorldMat).translation
 
-		-- clumping 
-		local clumpPercent = 1.0 - (getValue ccClumpingCurve.curves[1] 0f param)
-		local clumpOffset = guideWorldMat.translation - newWorldVertPos
-
-		hairGeo.verts[v].pos = newWorldVertPos + clumpPercent * clumpOffset 
+		local clumpOffset = GetClumpingOffset ccClumpingCurve param guideWorldMat newWorldVertPos 
+		hairGeo.verts[v].pos = newWorldVertPos --+ clumpOffset
 
 	)
+	CompleteRedraw()
 
 	crvUtil.SaveCurveData guideline ccClumpingCurve
 	crvUtil.SaveCurveData guideline ccTwistCurve
+
+
 )
 
 -------------- Deform Resolving Functions End------------------
@@ -671,6 +756,8 @@ rollout HairBuilder "Hair Builder"
 
 	button btnSetTemplate "Set Template" align:#left width:120  across:3
 	button btnSetGuideline "Set Guideline" align:#left width:120 across:3
+
+
 
 	on btnSplineFromLine pressed do 
 	(
